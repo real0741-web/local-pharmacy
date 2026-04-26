@@ -1,0 +1,269 @@
+{
+  "settings": {
+    "pharmacyName": "우리약국",
+    "tagline": "대기 중에 약사님이 큐레이션한 제품을 둘러보세요",
+    "adminPin": "6967",
+    "payMethods": {
+      "kakao": false,
+      "naver": false,
+      "toss": false,
+      "counter": true
+    },
+    "mfdsApiKey": "LUvW8I7bbEVS1twTg%2FBx4DH%2BwSyC709ev9p7MLmKVlL3gd5zRWc6a6wktpBuIlOIFGcYe1Oyam1pj7u%2BReBbhA%3D%3D"
+  },
+  "categories": [
+    {
+      "id": "hot",
+      "emoji": "🔥",
+      "name": "창고형 초특가",
+      "desc": "대용량·고함량 제품을 가장 합리적인 가격에 만나보세요"
+    },
+    {
+      "id": "pick",
+      "emoji": "⭐",
+      "name": "약사 PICK",
+      "desc": "약사님이 직접 검증하고 추천하는 이달의 큐레이션"
+    },
+    {
+      "id": "eye",
+      "emoji": "👁️",
+      "name": "눈 건강",
+      "desc": "눈의 피로·건조감, 시력 보호에 도움"
+    },
+    {
+      "id": "energy",
+      "emoji": "💪",
+      "name": "피로 / 활력",
+      "desc": "만성 피로, 면역력, 컨디션 관리"
+    },
+    {
+      "id": "cold",
+      "emoji": "🤒",
+      "name": "감기 / 통증",
+      "desc": "두통, 근육통, 환절기 감기 증상"
+    },
+    {
+      "id": "family",
+      "emoji": "🩹",
+      "name": "상비약 / 생활",
+      "desc": "연고·파스·인공눈물 등 생활 필수 품목"
+    }
+  ],
+  "products": [
+    {
+      "id": "p01",
+      "cat": "hot",
+      "emoji": "💊",
+      "name": "루테인 골드 365일분",
+      "tagline": "눈 건강 종합 관리, 1일 1정",
+      "price": 39000,
+      "list": 59000,
+      "badges": [
+        "대용량",
+        "함량 1위"
+      ],
+      "stock": 12,
+      "pharmacistNote": "하루 1정으로 1년치. 가족 단위로 드시는 분께 추천드립니다.",
+      "info": "루테인 20mg, 지아잔틴 4mg / 12개월분",
+      "priceHidden": false
+    },
+    {
+      "id": "p02",
+      "cat": "hot",
+      "emoji": "🟠",
+      "name": "비타민C 1000mg 365일분",
+      "tagline": "면역과 피부 관리의 베이스",
+      "price": 14900,
+      "list": 24000,
+      "badges": [
+        "가성비 1위",
+        "대용량"
+      ],
+      "stock": 25,
+      "pharmacistNote": "식후에 한 알씩, 위가 약하신 분은 식사 직후가 좋아요.",
+      "info": "비타민C 1000mg / 12개월분 (365정)"
+    },
+    {
+      "id": "p03",
+      "cat": "hot",
+      "emoji": "🐟",
+      "name": "오메가3 알티지 6개월",
+      "tagline": "혈행 개선과 두뇌 건강",
+      "price": 29000,
+      "list": 48000,
+      "badges": [
+        "알티지",
+        "대용량"
+      ],
+      "stock": 9,
+      "pharmacistNote": "냉장 보관 시 비린 맛이 적어요. 식후에 드시면 흡수가 좋습니다.",
+      "info": "EPA+DHA 900mg / 6개월분 (180캡슐)"
+    },
+    {
+      "id": "p04",
+      "cat": "pick",
+      "emoji": "🌿",
+      "name": "마그네슘 액티브",
+      "tagline": "눈 떨림·근육 경련에",
+      "price": 18900,
+      "list": null,
+      "badges": [
+        "약사 PICK"
+      ],
+      "stock": 18,
+      "pharmacistNote": "눈 밑이 자주 떨리는 분, 다리에 쥐가 자주 나는 분께 추천.",
+      "info": "마그네슘 315mg, 비타민B6 / 90정"
+    },
+    {
+      "id": "p05",
+      "cat": "pick",
+      "emoji": "🟡",
+      "name": "활성형 비타민B 컴플렉스",
+      "tagline": "만성 피로 회복",
+      "price": 24900,
+      "list": 32000,
+      "badges": [
+        "약사 PICK",
+        "활성형"
+      ],
+      "stock": 14,
+      "pharmacistNote": "커피로도 안 풀리는 피로엔 활성형 B군이 정답입니다.",
+      "info": "8종 활성형 비타민B / 60정"
+    },
+    {
+      "id": "p06",
+      "cat": "eye",
+      "emoji": "👀",
+      "name": "아스타잔틴 헬릭스",
+      "tagline": "강력한 항산화 + 눈 보호",
+      "price": 32000,
+      "list": null,
+      "badges": [
+        "고함량"
+      ],
+      "stock": 6,
+      "pharmacistNote": "루테인보다 항산화에 더 집중된 제품. 모니터 자주 보시는 분께.",
+      "info": "아스타잔틴 12mg / 60캡슐"
+    },
+    {
+      "id": "p07",
+      "cat": "eye",
+      "emoji": "💧",
+      "name": "하루이즈 인공눈물 30개입",
+      "tagline": "일회용·방부제 무첨가",
+      "price": 8900,
+      "list": 12000,
+      "badges": [
+        "무방부제"
+      ],
+      "stock": 40,
+      "pharmacistNote": "렌즈 끼시는 분이나 안구건조 심하신 분께 1순위 추천.",
+      "info": "히알루론산나트륨 0.1% / 0.5ml × 30개"
+    },
+    {
+      "id": "p08",
+      "cat": "energy",
+      "emoji": "🍃",
+      "name": "밀크씨슬 간 케어",
+      "tagline": "잦은 회식·음주 후 케어",
+      "price": 19900,
+      "list": null,
+      "badges": [
+        "실리마린"
+      ],
+      "stock": 22,
+      "pharmacistNote": "음주 다음날 컨디션이 다릅니다. 꾸준히 드세요.",
+      "info": "실리마린 140mg / 60정"
+    },
+    {
+      "id": "p09",
+      "cat": "energy",
+      "emoji": "🧧",
+      "name": "홍삼 스틱 30포",
+      "tagline": "면역력·기력 보충",
+      "price": 35000,
+      "list": 45000,
+      "badges": [
+        "6년근"
+      ],
+      "stock": 11,
+      "pharmacistNote": "아침 공복 한 포로 하루를 시작해보세요.",
+      "info": "6년근 홍삼농축액 / 10ml × 30포"
+    },
+    {
+      "id": "p10",
+      "cat": "cold",
+      "emoji": "💊",
+      "name": "타이레놀 8시간 이알",
+      "tagline": "서방형 진통제",
+      "price": 6500,
+      "list": null,
+      "badges": [
+        "일반의약품"
+      ],
+      "stock": 30,
+      "pharmacistNote": "8시간 지속. 생리통, 두통에 식사와 무관하게 드실 수 있어요.",
+      "info": "아세트아미노펜 650mg / 20정"
+    },
+    {
+      "id": "p11",
+      "cat": "cold",
+      "emoji": "🌡️",
+      "name": "판콜에이 내복액",
+      "tagline": "환절기 종합감기약",
+      "price": 8000,
+      "list": null,
+      "badges": [
+        "일반의약품"
+      ],
+      "stock": 20,
+      "pharmacistNote": "콧물·기침 함께 있을 때 가장 무난한 종합감기약.",
+      "info": "30ml × 6병"
+    },
+    {
+      "id": "p12",
+      "cat": "family",
+      "emoji": "🩹",
+      "name": "제일파스 쿨 50매",
+      "tagline": "근육통·어깨결림",
+      "price": 9900,
+      "list": 14000,
+      "badges": [
+        "대용량"
+      ],
+      "stock": 35,
+      "pharmacistNote": "약국에서 가장 많이 나가는 파스. 한 통이면 한참 씁니다.",
+      "info": "쿨링타입 부착포 50매"
+    },
+    {
+      "id": "p13",
+      "cat": "family",
+      "emoji": "🟢",
+      "name": "후시딘 연고 10g",
+      "tagline": "상처·트러블 항생연고",
+      "price": 5500,
+      "list": null,
+      "badges": [
+        "일반의약품"
+      ],
+      "stock": 28,
+      "pharmacistNote": "베인 상처, 여드름 짠 자리에 얇게 발라주세요.",
+      "info": "퓨시드산나트륨 / 10g"
+    },
+    {
+      "id": "p14",
+      "cat": "family",
+      "emoji": "🟣",
+      "name": "마데카솔 케어 8g",
+      "tagline": "흉터 예방",
+      "price": 6900,
+      "list": null,
+      "badges": [
+        "일반의약품"
+      ],
+      "stock": 22,
+      "pharmacistNote": "상처가 아물기 시작할 때 발라야 효과가 좋습니다.",
+      "info": "센텔라 정량추출물 / 8g"
+    }
+  ]
+}
