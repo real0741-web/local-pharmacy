@@ -865,6 +865,12 @@ function migrate(d) {
 }
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  // Cloudflare KV에 백그라운드 동기화 (실패해도 로컬 데이터는 유지)
+  fetch(`${PROXY}/?action=saveData`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).catch(() => {});
 }
 
 let data = loadData();
@@ -2181,10 +2187,10 @@ function resetData() {
   showToast('초기값으로 복원되었습니다');
 }
 
-/* ─── 원격 데이터 동기화 (항상 Netlify data.json 우선) ─── */
+/* ─── 원격 데이터 동기화 (Cloudflare KV 우선) ─── */
 async function tryLoadRemoteData() {
   try {
-    const res = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
     if (!res.ok) return false;
     const remote = await res.json();
     if (!remote.categories || !remote.products) return false;
@@ -2207,7 +2213,7 @@ applyHeader();
 renderCategories();
 renderProducts();
 updateCartUI();
-tryLoadRemoteData(); // 백그라운드에서 Netlify 최신 데이터 로드
+tryLoadRemoteData(); // 백그라운드에서 Cloudflare KV 최신 데이터 로드
 </script>
 </body>
 </html>
