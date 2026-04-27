@@ -2,14 +2,14 @@
   "settings": {
     "pharmacyName": "우리약국",
     "tagline": "대기 중에 약사님이 큐레이션한 제품을 둘러보세요",
-    "adminPin": "6967",
+    "adminPin": "0000",
     "payMethods": {
       "kakao": false,
       "naver": false,
       "toss": false,
       "counter": true
     },
-    "mfdsApiKey": "LUvW8I7bbEVS1twTg%2FBx4DH%2BwSyC709ev9p7MLmKVlL3gd5zRWc6a6wktpBuIlOIFGcYe1Oyam1pj7u%2BReBbhA%3D%3D"
+    "mfdsApiKey": ""
   },
   "categories": [
     {
