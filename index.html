@@ -424,7 +424,7 @@
         <div class="field">
           <label>웹페이지 URL</label>
           <input id="qr-url" type="text" placeholder="https://my-pharmacy.example.com" />
-          <div class="text-xs text-slate-400 mt-1">예: 약국 PC 로컬 IP, 무료 호스팅 주소(Vercel/Netlify), 자체 도메인 등</div>
+          <div class="text-xs text-slate-400 mt-1">예: https://real0741-web.github.io/local-pharmacy/</div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="field">
@@ -562,16 +562,16 @@
         <hr class="border-slate-100" />
 
         <div>
-          <div class="font-bold mb-2">Netlify 배포 (전체 동기화)</div>
+          <div class="font-bold mb-2">☁️ Cloudflare 자동 동기화</div>
           <div class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-xs text-teal-800 leading-relaxed mb-3">
-            <b>📌 동기화 방법</b><br/>
-            ① data.json 내보내기 버튼 클릭<br/>
-            ② <code class="bg-white px-1 rounded">index.html</code> + <code class="bg-white px-1 rounded">data.json</code> 두 파일을 같은 폴더에 넣기<br/>
-            ③ 그 <b>폴더 전체</b>를 Netlify 사이트에 드래그 업로드<br/>
-            → 컴퓨터·폰 모두 새로고침하면 동일하게 적용됩니다
+            <b>✅ 자동 저장 중</b><br/>
+            제품·분류·설정을 변경하면 Cloudflare KV에 자동으로 저장됩니다.<br/>
+            어느 기기에서 접속해도 항상 최신 데이터가 표시됩니다.<br/>
+            <br/>
+            <b>📌 백업이 필요할 때</b>만 data.json을 내보내세요
           </div>
           <div class="flex gap-2 flex-wrap mb-3">
-            <button onclick="exportDataJson()" class="btn-primary">📦 data.json 내보내기</button>
+            <button onclick="exportDataJson()" class="btn-secondary">📦 data.json 백업</button>
           </div>
           <div class="flex gap-2 flex-wrap">
             <button onclick="exportData()" class="btn-secondary">📥 백업 JSON 내보내기</button>
@@ -1185,12 +1185,12 @@ function showMyOrders() {
 function closeMyOrders() {
   $('#my-orders-overlay').classList.add('hidden');
 }
-/* ─── 텔레그램 알림 설정 ────────────────────────────
-   업무폰으로 바꿀 때: TELEGRAM_CHAT_ID 값만 교체
-   그룹채팅 ID로 바꾸면 직원 전원 동시 알림 가능
+/* ─── 주문 알림 설정 ────────────────────────────────
+   텔레그램 토큰/채팅ID는 Cloudflare Worker 환경변수에 보관
+   (GitHub에 노출되지 않음 — 보안 강화)
+   ntfy 토픽: notifier.py 의 NTFY_TOPIC 과 반드시 일치
 ──────────────────────────────────────────────── */
-const TELEGRAM_TOKEN = '8393725245:AAFq3TyLMyibf7yFy1qYsMA5V2a5tvZc5g8';
-const TELEGRAM_CHAT_ID = '53168284';
+const NTFY_TOPIC = 'wooripharmacy_orders';
 
 async function sendTelegramAlert(order) {
   // 제품별 줄 + 복약지도 문구
@@ -1212,19 +1212,18 @@ async function sendTelegramAlert(order) {
     `🆔 ${order.id}\n` +
     `⏰ ${new Date().toLocaleTimeString('ko-KR')}`;
 
-  // 1) 사장님 폰으로 텔레그램 알림 (기존)
+  // 1) Cloudflare Worker 경유 → 텔레그램 알림 (토큰은 Worker 환경변수에 보관)
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    await fetch(`${PROXY}/?action=sendTelegram`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+      body: JSON.stringify({ text })
     });
   } catch (e) { console.warn('텔레그램 알림 실패:', e); }
 
-  // 2) PC 프린터 notifier로 전달 (ntfy.sh 중계)
+  // 2) ntfy.sh → PC 프린터 notifier 전달
   try {
-    const ntfyTopic = 'wooripharmacy_' + TELEGRAM_TOKEN.slice(0, 10).replace(':', '_');
-    await fetch(`https://ntfy.sh/${ntfyTopic}`, {
+    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
       method: 'POST',
       headers: { 'Title': 'New Order', 'Content-Type': 'text/plain; charset=utf-8' },
       body: text
@@ -1413,6 +1412,11 @@ function closeDetail() {
 /* ===========================================
    관리자 모드
    =========================================== */
+
+/* 관리자 URL 감지: ?mode=admin 파라미터 또는 #admin 해시 */
+const _adminUrlMode = new URLSearchParams(location.search).get('mode') === 'admin'
+                   || location.hash === '#admin';
+
 let logoClicks = 0, logoTimer = null;
 $('#logo').addEventListener('click', () => {
   logoClicks++;
@@ -1420,8 +1424,6 @@ $('#logo').addEventListener('click', () => {
   logoTimer = setTimeout(() => logoClicks = 0, 1500);
   if (logoClicks >= 5) { logoClicks = 0; openAdminLogin(); }
 });
-// URL #admin 로도 진입 가능
-if (location.hash === '#admin') openAdminLogin();
 
 function openAdminLogin() {
   $('#admin-login-overlay').classList.remove('hidden');
@@ -1444,12 +1446,16 @@ function tryAdminLogin() {
 
 function enterAdmin() {
   isAdmin = true;
+  sessionStorage.setItem('pharm_admin_session', '1'); // 탭 세션 동안 유지
+  window._qrPriceVisible = true; // 관리자는 가격 항상 공개
   $('#admin-dashboard').classList.remove('hidden');
   switchAdminTab('categories');
   document.body.style.overflow = 'hidden';
 }
 function exitAdmin() {
   isAdmin = false;
+  sessionStorage.removeItem('pharm_admin_session');
+  window._qrPriceVisible = false;
   $('#admin-dashboard').classList.add('hidden');
   document.body.style.overflow = '';
   // 변경사항 사용자 화면에 반영
@@ -2117,10 +2123,7 @@ function changePin() {
   data.settings.adminPin = v;
   saveData();
   $('#setting-pin').value = '';
-  showToast('PIN이 변경되었습니다');
-  if (confirm('PIN 변경이 완료되었습니다.\nNetlify에 올릴 data.json을 지금 다운로드할까요?')) {
-    exportDataJson();
-  }
+  showToast('PIN이 변경되었습니다 — Cloudflare에 자동 저장됩니다');
 }
 function exportData() {
   const json = JSON.stringify(data, null, 2);
@@ -2208,7 +2211,24 @@ async function tryLoadRemoteData() {
 
 /* ─── 초기화 ─── */
 $('#cart-fab').addEventListener('click', () => toggleCart(true));
-checkQRValidity(); 
+
+// 관리자 URL(?mode=admin)이면 QR 타이머 우회 + 세션 복원 or 로그인 창 열기
+if (_adminUrlMode) {
+  if (sessionStorage.getItem('pharm_admin_session')) {
+    // 이전 세션에서 로그인했던 관리자 → 자동 복원
+    isAdmin = true;
+    window._qrPriceVisible = true;
+    // 화면 안정화 후 관리자 패널 열기
+    setTimeout(() => enterAdmin(), 0);
+  } else {
+    // 처음 접속 → 로그인 창 자동 표시
+    setTimeout(() => openAdminLogin(), 300);
+  }
+} else {
+  // 일반 고객 URL → QR 1시간 타이머 적용
+  checkQRValidity();
+}
+
 applyHeader();
 renderCategories();
 renderProducts();
