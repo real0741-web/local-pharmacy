@@ -961,8 +961,11 @@ function showToast(msg) {
    사용자 화면 렌더링
    =========================================== */
 function applyHeader() {
-  $('#header-name').textContent = data.settings.pharmacyName || '로컬 창고약국';
+  const name = data.settings.pharmacyName || '로컬 창고약국';
+  $('#header-name').textContent = name;
   $('#header-tagline').textContent = data.settings.tagline || '';
+  // 브라우저 탭 제목 + 인쇄 헤더에도 반영
+  document.title = name + ' - 디지털 가이드';
 }
 
 function renderCategories() {
@@ -1273,8 +1276,9 @@ async function sendTelegramAlert(order) {
     return line;
   }).join('\n');
 
+  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
   const text =
-    '🔔 새 주문 접수!\n\n' +
+    `🔔 새 주문 접수! [${pharmName}]\n\n` +
     `🎫 접수번호: ${order.customerName}\n` +
     '──────────────\n' +
     `${itemLines}\n` +
