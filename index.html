@@ -72,6 +72,14 @@
     background: #f1f5f9; color: #334155; font-weight: 600;
     padding: 10px 16px; border-radius: 10px;
   }
+  /* 자동 인쇄: 인쇄 시 영수증만 보임 */
+  @media print {
+    body > *:not(#print-area) { display: none !important; }
+    #print-area { display: block !important; position: fixed; top: 0; left: 0; }
+    #print-area pre { font-family: 'Courier New', monospace; font-size: 12px; white-space: pre; }
+  }
+  #print-area { display: none; }
+
   .btn-danger {
     background: #fee2e2; color: #b91c1c; font-weight: 600;
     padding: 8px 14px; border-radius: 10px;
@@ -328,6 +336,31 @@
 <!--                관리자 영역                       -->
 <!-- ============================================== -->
 
+<!-- ============ 주문 알림 팝업 (관리자 전용) ============ -->
+<div id="order-alert-overlay" class="hidden fixed inset-0 z-[90] bg-slate-900/70 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md slide-up">
+    <!-- 헤더 -->
+    <div class="bg-teal-600 text-white rounded-t-2xl px-5 py-4 flex items-center gap-3">
+      <span class="text-2xl animate-bounce">🔔</span>
+      <div>
+        <div class="font-bold text-lg">새 주문이 들어왔어요!</div>
+        <div id="order-alert-time" class="text-teal-200 text-xs"></div>
+      </div>
+    </div>
+    <!-- 주문 내용 -->
+    <div id="order-alert-body" class="px-5 py-4 text-sm font-mono whitespace-pre-wrap text-slate-700 max-h-72 overflow-y-auto leading-relaxed"></div>
+    <!-- 버튼 -->
+    <div class="px-5 pb-5 flex gap-3">
+      <button onclick="reprintOrderAlert()" class="btn-secondary flex items-center justify-center gap-2 px-4">
+        🖨️ 재인쇄
+      </button>
+      <button onclick="closeOrderAlert()" class="btn-primary flex-1">
+        확인
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- 관리자 로그인 모달 -->
 <div id="admin-login-overlay" class="hidden fixed inset-0 z-[70] bg-slate-900/60 fade flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
@@ -343,6 +376,9 @@
     <div class="text-[11px] text-slate-400 mt-3 text-center">최초 PIN: 1234 (로그인 후 설정에서 변경)</div>
   </div>
 </div>
+
+<!-- 자동 인쇄 영역 (화면엔 안 보이고 인쇄 시에만 표시) -->
+<div id="print-area"><pre id="print-content"></pre></div>
 
 <!-- 관리자 대시보드 (전체화면 오버레이) -->
 <div id="admin-dashboard" class="hidden fixed inset-0 z-[70] bg-slate-50 overflow-y-auto">
@@ -369,6 +405,21 @@
       <button class="admin-tab" data-tab="settings">설정</button>
     </div>
   </header>
+
+  <!-- 미수신 주문함 (관리자 오프라인 동안 들어온 주문) -->
+  <div id="missed-orders-panel" class="hidden bg-amber-50 border-b border-amber-200">
+    <div class="max-w-6xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2 font-bold text-amber-800">
+          <span>📬</span>
+          <span>오프라인 동안 받은 주문</span>
+          <span id="missed-orders-count" class="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full"></span>
+        </div>
+        <button onclick="clearMissedOrders()" class="text-xs text-amber-600 underline">모두 지우기</button>
+      </div>
+      <div id="missed-orders-list" class="flex flex-col gap-2"></div>
+    </div>
+  </div>
 
   <main class="max-w-6xl mx-auto px-4 py-6">
     <!-- 분류 관리 탭 -->
@@ -557,6 +608,21 @@
             <input id="setting-pin" type="password" inputmode="numeric" />
           </div>
           <button onclick="changePin()" class="btn-primary">PIN 변경</button>
+        </div>
+
+        <hr class="border-slate-100" />
+
+        <div>
+          <div class="font-bold mb-2">📡 주문 알림 코드</div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed mb-2">
+            관리자 모드가 켜져 있으면 새 주문 시 <b>자동으로 알림 + 인쇄창</b>이 떠요.<br/>
+            별도 프로그램 설치 없이 브라우저만으로 동작합니다.
+          </div>
+          <div class="flex items-center gap-2">
+            <code id="ntfy-topic-display" class="flex-1 bg-slate-100 rounded-lg px-3 py-2 text-xs text-slate-700 font-mono"></code>
+            <button onclick="copyNtfyTopic()" class="btn-secondary text-xs px-3 py-2">복사</button>
+          </div>
+          <div class="text-xs text-slate-400 mt-1">다른 기기의 notifier.py 에 이 코드를 ntfy토픽으로 사용하세요</div>
         </div>
 
         <hr class="border-slate-100" />
@@ -760,6 +826,7 @@ const DEFAULT_DATA = {
     adminPin: '1234',
     payMethods: { kakao: false, naver: false, toss: false, counter: true },
     mfdsApiKey: '',
+    ntfyTopic: '',   // 비어있으면 첫 실행 시 자동 생성
   },
   categories: [
     { id: 'hot',    emoji: '🔥', name: '창고형 초특가', desc: '대용량·고함량 제품을 가장 합리적인 가격에 만나보세요' },
@@ -1186,11 +1253,17 @@ function closeMyOrders() {
   $('#my-orders-overlay').classList.add('hidden');
 }
 /* ─── 주문 알림 설정 ────────────────────────────────
-   텔레그램 토큰/채팅ID는 Cloudflare Worker 환경변수에 보관
-   (GitHub에 노출되지 않음 — 보안 강화)
-   ntfy 토픽: notifier.py 의 NTFY_TOPIC 과 반드시 일치
+   ntfy 토픽: 약국별 고유 코드 (설정에서 자동 생성)
+   텔레그램 토큰은 Cloudflare Worker 환경변수에 보관
 ──────────────────────────────────────────────── */
-const NTFY_TOPIC = 'wooripharmacy_orders';
+function getNtfyTopic() {
+  if (!data.settings.ntfyTopic) {
+    // 첫 실행 시 자동으로 고유 코드 생성 (랜덤 8자리)
+    data.settings.ntfyTopic = 'pharm_' + Math.random().toString(36).slice(2, 10);
+    saveData();
+  }
+  return data.settings.ntfyTopic;
+}
 
 async function sendTelegramAlert(order) {
   // 제품별 줄 + 복약지도 문구
@@ -1212,7 +1285,16 @@ async function sendTelegramAlert(order) {
     `🆔 ${order.id}\n` +
     `⏰ ${new Date().toLocaleTimeString('ko-KR')}`;
 
-  // 1) Cloudflare Worker 경유 → 텔레그램 알림 (토큰은 Worker 환경변수에 보관)
+  // 1) Cloudflare KV에 주문 저장 (7일 보관)
+  try {
+    await fetch(`${PROXY}/?action=saveOrder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, orderId: order.id })
+    });
+  } catch (e) { console.warn('주문 저장 실패:', e); }
+
+  // 2) Cloudflare Worker 경유 → 텔레그램 알림
   try {
     await fetch(`${PROXY}/?action=sendTelegram`, {
       method: 'POST',
@@ -1221,9 +1303,9 @@ async function sendTelegramAlert(order) {
     });
   } catch (e) { console.warn('텔레그램 알림 실패:', e); }
 
-  // 2) ntfy.sh → PC 프린터 notifier 전달
+  // 3) ntfy.sh → 관리자 브라우저 실시간 알림
   try {
-    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    await fetch(`https://ntfy.sh/${getNtfyTopic()}`, {
       method: 'POST',
       headers: { 'Title': 'New Order', 'Content-Type': 'text/plain; charset=utf-8' },
       body: text
@@ -1446,11 +1528,13 @@ function tryAdminLogin() {
 
 function enterAdmin() {
   isAdmin = true;
-  sessionStorage.setItem('pharm_admin_session', '1'); // 탭 세션 동안 유지
-  window._qrPriceVisible = true; // 관리자는 가격 항상 공개
+  sessionStorage.setItem('pharm_admin_session', '1');
+  window._qrPriceVisible = true;
   $('#admin-dashboard').classList.remove('hidden');
   switchAdminTab('categories');
   document.body.style.overflow = 'hidden';
+  startOrderListener();       // 실시간 수신 시작
+  fetchMissedOrders();        // 오프라인 동안 받은 주문 조회
 }
 function exitAdmin() {
   isAdmin = false;
@@ -1458,7 +1542,7 @@ function exitAdmin() {
   window._qrPriceVisible = false;
   $('#admin-dashboard').classList.add('hidden');
   document.body.style.overflow = '';
-  // 변경사항 사용자 화면에 반영
+  stopOrderListener(); // 주문 수신 중단
   applyHeader();
   renderCategories();
   renderProducts();
@@ -1756,6 +1840,137 @@ function downloadQR() {
   a.href = dataUrl;
   a.download = `pharmacy-qr-${Date.now()}.png`;
   a.click();
+}
+
+/* ─── 관리자 실시간 주문 수신 (ntfy.sh SSE) + 미수신 주문함 ─── */
+let _orderEvtSource = null;
+let _currentOrderText = '';
+const ADMIN_LAST_SEEN_KEY = 'pharm_admin_last_seen';
+
+function startOrderListener() {
+  stopOrderListener();
+  const topic = getNtfyTopic();
+  try {
+    _orderEvtSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
+    _orderEvtSource.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.event === 'message' && msg.message && msg.message !== '__ping__') {
+          showOrderAlert(msg.message);
+        }
+      } catch(_) {}
+    };
+    _orderEvtSource.onerror = () => {
+      stopOrderListener();
+      setTimeout(() => { if (isAdmin) startOrderListener(); }, 5000);
+    };
+  } catch(e) { console.warn('주문 리스너 시작 실패:', e); }
+}
+
+function stopOrderListener() {
+  if (_orderEvtSource) { _orderEvtSource.close(); _orderEvtSource = null; }
+  // 관리자 오프라인 시작 시각 저장
+  localStorage.setItem(ADMIN_LAST_SEEN_KEY, String(Math.floor(Date.now() / 1000)));
+}
+
+/* ── 오프라인 동안 받은 주문 가져오기 (Cloudflare KV, 7일 보관) ── */
+async function fetchMissedOrders() {
+  const since = localStorage.getItem(ADMIN_LAST_SEEN_KEY) || '0';
+  try {
+    const resp = await fetch(
+      `${PROXY}/?action=getOrders&since=${since}`,
+      { cache: 'no-store' }
+    );
+    if (!resp.ok) return;
+    const orders = await resp.json();
+    if (Array.isArray(orders) && orders.length > 0) {
+      renderMissedOrders(orders.map(o => ({ text: o.text, time: o.ts })));
+    }
+  } catch(e) { console.warn('미수신 주문 조회 실패:', e); }
+}
+
+function renderMissedOrders(orders) {
+  const panel = $('#missed-orders-panel');
+  const list  = $('#missed-orders-list');
+  const count = $('#missed-orders-count');
+  if (!panel || !list) return;
+  count.textContent = orders.length + '건';
+  list.innerHTML = orders.map((o, i) => {
+    const t = new Date(o.time * 1000).toLocaleString('ko-KR');
+    const preview = o.text.split('\n').slice(0,3).join(' | ');
+    return `<div class="bg-white rounded-xl border border-amber-200 px-4 py-3 flex items-start justify-between gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="text-xs text-amber-600 mb-1">${t}</div>
+        <div class="text-sm text-slate-700 truncate">${preview}</div>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button onclick="printMissedOrder(${i})" class="text-xs btn-secondary px-3 py-1">🖨️ 인쇄</button>
+        <button onclick="dismissMissedOrder(this)" class="text-xs text-slate-400 px-2">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  // 데이터 보관
+  panel._orders = orders;
+  panel.classList.remove('hidden');
+}
+
+function printMissedOrder(idx) {
+  const panel = $('#missed-orders-panel');
+  if (!panel._orders) return;
+  autoPrint(panel._orders[idx].text);
+}
+
+function dismissMissedOrder(btn) {
+  btn.closest('div[class*="bg-white"]').remove();
+  const list = $('#missed-orders-list');
+  if (!list.children.length) $('#missed-orders-panel').classList.add('hidden');
+}
+
+function clearMissedOrders() {
+  $('#missed-orders-panel').classList.add('hidden');
+  $('#missed-orders-list').innerHTML = '';
+}
+
+/* ── 알림음 ── */
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1100, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.12);
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.13);
+    });
+  } catch(_) {}
+}
+
+/* ── 자동 인쇄 (현재 페이지 직접 출력 — 팝업 차단 없음) ── */
+function autoPrint(text) {
+  $('#print-content').textContent = text;
+  window.print();
+}
+
+/* ── 실시간 주문 팝업 ── */
+function showOrderAlert(text) {
+  _currentOrderText = text;
+  $('#order-alert-body').textContent = text;
+  $('#order-alert-time').textContent = new Date().toLocaleTimeString('ko-KR');
+  $('#order-alert-overlay').classList.remove('hidden');
+  playBeep();
+  autoPrint(text); // 자동 인쇄
+}
+
+function closeOrderAlert() {
+  $('#order-alert-overlay').classList.add('hidden');
+  _currentOrderText = '';
+}
+
+function reprintOrderAlert() {
+  if (_currentOrderText) autoPrint(_currentOrderText);
 }
 
 /* ─── 세션 기반 가격 공개 (QR 접속 후 1시간) ─── */
@@ -2077,6 +2292,8 @@ function fillSettings() {
   $('#setting-name').value    = data.settings.pharmacyName || '';
   $('#setting-tagline').value = data.settings.tagline || '';
   $('#setting-pin').value     = '';
+  const ntfyEl = $('#ntfy-topic-display');
+  if (ntfyEl) ntfyEl.textContent = getNtfyTopic();
   const pm = data.settings.payMethods || { kakao:false, naver:false, toss:false, counter:true };
   $('#pay-toggle-kakao').checked = !!pm.kakao;
   $('#pay-toggle-naver').checked = !!pm.naver;
@@ -2116,6 +2333,10 @@ function saveMfdsKey() {
     statusEl.style.color = key ? '#0f766e' : '#94a3b8';
   }
   showToast(key ? 'API 키가 등록되었습니다' : 'API 키가 삭제되었습니다');
+}
+function copyNtfyTopic() {
+  const topic = getNtfyTopic();
+  navigator.clipboard.writeText(topic).then(() => showToast('알림 코드가 복사되었습니다'));
 }
 function changePin() {
   const v = ($('#setting-pin').value || '').trim();
