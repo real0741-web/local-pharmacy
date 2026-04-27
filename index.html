@@ -1885,6 +1885,9 @@ function downloadQR() {
 /* ─── 관리자 실시간 주문 수신 (ntfy.sh SSE) + 미수신 주문함 ─── */
 let _orderEvtSource = null;
 let _currentOrderText = '';
+let _retryDelay = 5000;        // 최초 재연결 대기: 5초
+const _retryMax  = 120000;     // 최대 재연결 대기: 120초
+let _retryTimer  = null;
 const ADMIN_LAST_SEEN_KEY = 'pharm_admin_last_seen';
 
 function startOrderListener() {
@@ -1896,19 +1899,28 @@ function startOrderListener() {
       try {
         const msg = JSON.parse(e.data);
         if (msg.event === 'message' && msg.message && msg.message !== '__ping__') {
+          _retryDelay = 5000; // 성공 수신 시 백오프 초기화
           showOrderAlert(msg.message);
         }
       } catch(_) {}
     };
     _orderEvtSource.onerror = () => {
       stopOrderListener();
-      setTimeout(() => { if (isAdmin) startOrderListener(); }, 5000);
+      if (!isAdmin) return;
+      console.warn(`[ntfy] 재연결 대기 ${_retryDelay / 1000}초...`);
+      _retryTimer = setTimeout(() => {
+        if (isAdmin) startOrderListener();
+      }, _retryDelay);
+      // 지수 백오프: 5s → 10s → 20s → 40s → 120s (최대)
+      _retryDelay = Math.min(_retryDelay * 2, _retryMax);
     };
   } catch(e) { console.warn('주문 리스너 시작 실패:', e); }
 }
 
 function stopOrderListener() {
+  if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
   if (_orderEvtSource) { _orderEvtSource.close(); _orderEvtSource = null; }
+  _retryDelay = 5000; // 리스너 중단 시 백오프 초기화
   // 관리자 오프라인 시작 시각 저장
   localStorage.setItem(ADMIN_LAST_SEEN_KEY, String(Math.floor(Date.now() / 1000)));
 }
