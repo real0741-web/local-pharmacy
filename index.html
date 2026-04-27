@@ -1782,6 +1782,11 @@ function checkQRValidity() {
      3) Open Food Facts (수입 식품·건기식)
      4) UPC Item DB (글로벌 범용)
    ─────────────────────────────────────────────────────────────────── */
+/* Cloudflare Worker 프록시 — CORS 우회용 */
+const PROXY = 'https://pharmacy-proxy.speed0324.workers.dev';
+const proxyFetch = (apiUrl, opts={}) =>
+  fetch(`${PROXY}/?url=${encodeURIComponent(apiUrl)}`, opts);
+
 const getMfdsKey = () => (data.settings.mfdsApiKey || '').trim();
 
 function _fillProduct({ name='', brand='', qty='', info='', imageUrl='', note='', source='' }) {
@@ -1831,7 +1836,7 @@ async function lookupBarcode() {
     try {
       const url = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
                   `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=3&BAR_CODE=${code}`;
-      const res  = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(8000) });
       const json = await res.json();
       const items = json?.body?.items;
       if (items && items.length > 0) {
@@ -1840,7 +1845,7 @@ async function lookupBarcode() {
           try {
             const url2 = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
                          `?serviceKey=${encodeURIComponent(KEY)}&itemSeq=${itemSeq}&type=json&numOfRows=3`;
-            const res2  = await fetch(url2, { signal: AbortSignal.timeout(7000) });
+            const res2  = await proxyFetch(url2, { signal: AbortSignal.timeout(7000) });
             const json2 = await res2.json();
             const items2 = json2?.body?.items;
             if (items2 && items2.length > 0) { _fillProduct(_parseEDrug(items2[0])); return; }
@@ -1870,7 +1875,7 @@ async function lookupBarcode() {
     try {
       const url = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
                   `?serviceKey=${encodeURIComponent(KEY)}&itemSeq=${code}&type=json&numOfRows=3`;
-      const res  = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(7000) });
       const json = await res.json();
       const items = json?.body?.items;
       if (items && items.length > 0) { _fillProduct(_parseEDrug(items[0])); return; }
@@ -1882,7 +1887,7 @@ async function lookupBarcode() {
     status.textContent = '🥗 식품안전나라 DB 조회 중... (2/4)';
     try {
       const url  = `https://openapi.foodsafetykorea.go.kr/api/${KEY}/C005/json/1/5/BAR_CD=${code}`;
-      const res  = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(7000) });
       const json = await res.json();
       const rows = json?.C005?.row;
       if (rows && rows.length > 0) {
@@ -1971,7 +1976,7 @@ async function searchDrugByName() {
   try {
     const url  = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
                  `?serviceKey=${encodeURIComponent(KEY)}&itemName=${encodeURIComponent(keyword)}&type=json&numOfRows=10`;
-    const res  = await fetch(url, { signal: AbortSignal.timeout(9000) });
+    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
     const json = await res.json();
     const items = json?.body?.items;
     if (!items || items.length === 0) {
@@ -2197,12 +2202,4 @@ async function tryLoadRemoteData() {
 
 /* ─── 초기화 ─── */
 $('#cart-fab').addEventListener('click', () => toggleCart(true));
-checkQRValidity();   // 반드시 renderProducts() 보다 먼저
-applyHeader();
-renderCategories();
-renderProducts();
-updateCartUI();
-tryLoadRemoteData(); // 백그라운드에서 Netlify 최신 데이터 로드
-</script>
-</body>
-</html>
+checkQRValidity(); 
