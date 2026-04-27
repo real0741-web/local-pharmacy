@@ -74,9 +74,10 @@
   }
   /* 자동 인쇄: 인쇄 시 영수증만 보임 */
   @media print {
+    @page { margin: 8mm; }   /* 브라우저 기본 여백 최소화 */
     body > *:not(#print-area) { display: none !important; }
-    #print-area { display: block !important; position: fixed; top: 0; left: 0; }
-    #print-area pre { font-family: 'Courier New', monospace; font-size: 12px; white-space: pre; }
+    #print-area { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+    #print-area pre { font-family: 'Courier New', monospace; font-size: 11px; white-space: pre; line-height: 1.5; }
   }
   #print-area { display: none; }
 
@@ -1989,8 +1990,16 @@ function playBeep() {
 
 /* ── 자동 인쇄 (현재 페이지 직접 출력 — 팝업 차단 없음) ── */
 function autoPrint(text) {
-  $('#print-content').textContent = text;
+  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  const bar = '━'.repeat(32);
+  const pad = (s) => s.padStart(Math.floor((32 + s.length) / 2)).padEnd(32);
+  const header = `${bar}\n${pad(pharmName)}\n${bar}\n`;
+  $('#print-content').textContent = header + text;
+  // 브라우저 탭 타이틀도 맞춰줌 (인쇄 헤더용)
+  document.title = pharmName + ' - 주문 접수증';
   window.print();
+  // 인쇄 후 타이틀 원복
+  document.title = pharmName + ' - 디지털 가이드';
 }
 
 /* ── 실시간 주문 팝업 ── */
