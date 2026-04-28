@@ -9,6 +9,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- 바코드 스캔 라이브러리 (크롬·사파리·파이어폭스 모두 지원) -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- 엑셀 파일 파싱용 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo',
@@ -444,6 +446,16 @@
         </div>
         <button onclick="openProductEditor()" class="btn-primary">+ 제품 추가</button>
       </div>
+      <!-- 엑셀 일괄 등록 -->
+      <div class="flex gap-2 mb-3 flex-wrap">
+        <button onclick="downloadExcelTemplate()" class="btn-secondary text-sm flex items-center gap-1">
+          📥 엑셀 템플릿 받기
+        </button>
+        <label class="btn-primary text-sm cursor-pointer flex items-center gap-1">
+          📊 엑셀 일괄 등록
+          <input id="excel-import-file" type="file" accept=".xlsx,.xls" class="hidden" onchange="importFromExcel(event)" />
+        </label>
+      </div>
       <div class="flex gap-2 mb-4 flex-wrap">
         <input id="prod-search" type="text" placeholder="🔍 제품명 검색"
                class="flex-1 min-w-[200px] px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -739,6 +751,13 @@
         </div>
       </div>
       <input id="prod-edit-image" type="hidden" />
+      <!-- AI 분석 버튼 -->
+      <button type="button" id="ai-analyze-btn" onclick="analyzeProductWithAI()"
+        class="mt-2 w-full py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+        style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">
+        🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력
+      </button>
+      <div id="ai-analyze-status" class="text-xs text-center mt-1 hidden"></div>
     </div>
     <div class="field">
       <label>분류</label>
@@ -2515,6 +2534,186 @@ renderCategories();
 renderProducts();
 updateCartUI();
 tryLoadRemoteData(); // 백그라운드에서 Cloudflare KV 최신 데이터 로드
+
+/* ═══════════════════════════════════════════════
+   🤖 AI 제품 분석 (Claude API ← Cloudflare Worker)
+   ═══════════════════════════════════════════════ */
+async function analyzeProductWithAI() {
+  const imgData = $('#prod-edit-image').value;
+  const imgFile = $('#prod-img-file').files?.[0];
+  const statusEl = $('#ai-analyze-status');
+  const btn = $('#ai-analyze-btn');
+
+  // 사진이 없으면 업로드 유도
+  if (!imgData && !imgFile) {
+    statusEl.className = 'text-xs text-center mt-1 text-orange-500';
+    statusEl.textContent = '⚠️ 먼저 제품 사진을 업로드해주세요';
+    statusEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ AI 분석 중...';
+  statusEl.className = 'text-xs text-center mt-1 text-slate-400';
+  statusEl.textContent = '사진을 읽고 있어요...';
+  statusEl.classList.remove('hidden');
+
+  try {
+    // base64 추출
+    let base64 = imgData; // 이미 저장된 이미지
+    let mediaType = 'image/jpeg';
+    if (imgFile && !base64) {
+      const reader = new FileReader();
+      base64 = await new Promise((res, rej) => {
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(imgFile);
+      });
+    }
+    // "data:image/jpeg;base64,XXXX" → 순수 base64 + mediaType 분리
+    const match = base64.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) { mediaType = match[1]; base64 = match[2]; }
+
+    const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: base64, mediaType })
+    });
+    if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
+    const result = await resp.json();
+    if (result.error) throw new Error(result.error);
+
+    // 폼 자동 채우기 (기존 값 덮어쓰기 전 확인)
+    const fields = [
+      { id: 'prod-edit-name',    val: result.name,           label: '제품명' },
+      { id: 'prod-edit-tagline', val: result.tagline,        label: '한줄소개' },
+      { id: 'prod-edit-note',    val: result.pharmacistNote, label: '복약지도' },
+    ];
+    let filled = 0;
+    for (const f of fields) {
+      if (f.val) { $('#' + f.id).value = f.val; filled++; }
+    }
+
+    statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
+    statusEl.textContent = `✅ ${filled}개 항목 자동 입력 완료! 내용을 확인하고 필요하면 수정하세요.`;
+
+  } catch (e) {
+    statusEl.className = 'text-xs text-center mt-1 text-red-500';
+    statusEl.textContent = `❌ 분석 실패: ${e.message}`;
+    console.error('[AI 분석]', e);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력';
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   📊 엑셀 일괄 등록 (SheetJS)
+   ═══════════════════════════════════════════════ */
+
+/** 엑셀 템플릿 다운로드 */
+function downloadExcelTemplate() {
+  if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
+  const headers = ['제품명*', '분류ID*', '이모지', '한줄소개', '판매가*', '정가', '재고', '배지(콤마구분)', '복약지도', '제품정보'];
+  const example = ['루테인 골드 365일분', 'hot', '💊', '눈 건강 종합 관리, 1일 1정', 39000, 59000, 12, '대용량,함량 1위', '하루 1정, 식후 복용', '루테인 20mg / 12개월분'];
+  const catInfo = [['※ 분류ID 목록 (이 탭 참고)', ...data.categories.map(c => `${c.id} = ${c.name}`)]];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+  // 컬럼 너비
+  ws['!cols'] = [20,12,6,25,10,10,8,16,35,25].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, '제품목록');
+
+  const ws2 = XLSX.utils.aoa_to_sheet(catInfo);
+  XLSX.utils.book_append_sheet(wb, ws2, '분류ID 안내');
+
+  XLSX.writeFile(wb, '제품등록_템플릿.xlsx');
+}
+
+/** 엑셀 파일 → 제품 일괄 등록 */
+async function importFromExcel(event) {
+  if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
+  const file = event.target.files?.[0];
+  if (!file) return;
+  event.target.value = ''; // 같은 파일 재선택 허용
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      if (rows.length < 2) { alert('데이터가 없습니다. 2행부터 제품을 입력해주세요.'); return; }
+
+      const headerRow = rows[0].map(h => String(h).trim());
+      const colIdx = {
+        name:    headerRow.findIndex(h => h.includes('제품명')),
+        cat:     headerRow.findIndex(h => h.includes('분류ID')),
+        emoji:   headerRow.findIndex(h => h.includes('이모지')),
+        tagline: headerRow.findIndex(h => h.includes('한줄소개')),
+        price:   headerRow.findIndex(h => h.includes('판매가')),
+        list:    headerRow.findIndex(h => h.includes('정가')),
+        stock:   headerRow.findIndex(h => h.includes('재고')),
+        badges:  headerRow.findIndex(h => h.includes('배지')),
+        note:    headerRow.findIndex(h => h.includes('복약지도')),
+        info:    headerRow.findIndex(h => h.includes('제품정보')),
+      };
+
+      if (colIdx.name < 0 || colIdx.price < 0) {
+        alert('헤더에 "제품명"과 "판매가" 컬럼이 필요합니다.\n템플릿을 다운받아 사용해주세요.');
+        return;
+      }
+
+      const newProducts = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const name = String(r[colIdx.name] || '').trim();
+        if (!name) continue;
+        const price = parseInt(r[colIdx.price]) || 0;
+        if (price <= 0) continue;
+
+        const catVal = colIdx.cat >= 0 ? String(r[colIdx.cat] || '').trim() : '';
+        const cat = catVal && data.categories.find(c => c.id === catVal) ? catVal : (data.categories[0]?.id || 'hot');
+
+        newProducts.push({
+          id: 'p_' + Date.now() + '_' + i,
+          cat,
+          emoji:   colIdx.emoji   >= 0 ? String(r[colIdx.emoji]   || '').trim() || '💊' : '💊',
+          name,
+          tagline: colIdx.tagline >= 0 ? String(r[colIdx.tagline] || '').trim() : '',
+          price,
+          list:    colIdx.list    >= 0 ? (parseInt(r[colIdx.list]) || null) : null,
+          stock:   colIdx.stock   >= 0 ? (parseInt(r[colIdx.stock]) || 0) : 0,
+          badges:  colIdx.badges  >= 0 ? String(r[colIdx.badges]  || '').split(',').map(b => b.trim()).filter(Boolean) : [],
+          pharmacistNote: colIdx.note >= 0 ? String(r[colIdx.note] || '').trim() : '',
+          info:    colIdx.info    >= 0 ? String(r[colIdx.info]    || '').trim() : '',
+        });
+      }
+
+      if (newProducts.length === 0) { alert('유효한 제품 행이 없습니다.'); return; }
+
+      const mode = confirm(
+        `✅ ${newProducts.length}개 제품을 가져옵니다.\n\n` +
+        `[확인] = 기존 제품에 추가\n[취소] = 기존 제품 전체 교체`
+      );
+      if (mode) {
+        data.products = [...data.products, ...newProducts];
+      } else {
+        if (!confirm('기존 제품이 모두 삭제됩니다. 계속할까요?')) return;
+        data.products = newProducts;
+      }
+
+      saveData();
+      renderAdminProducts();
+      renderProducts();
+      showToast(`✅ ${newProducts.length}개 제품 등록 완료!`);
+    } catch (err) {
+      alert('엑셀 파일 읽기 오류: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
 </script>
 </body>
 </html>
