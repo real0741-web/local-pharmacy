@@ -325,9 +325,8 @@
 <div id="detail-overlay" class="hidden fixed inset-0 z-40 bg-slate-900/50 fade" onclick="closeDetail()"></div>
 <div id="detail-modal" class="hidden fixed z-50 inset-x-0 bottom-0 sm:inset-0 sm:m-auto
                               sm:max-w-lg sm:rounded-3xl
-                              rounded-t-3xl bg-white shadow-2xl slide-up flex flex-col"
+                              rounded-t-3xl bg-white shadow-2xl slide-up overflow-hidden flex flex-col"
      style="max-height:92vh">
-  <div id="detail-img-wrap" class="shrink-0 w-full overflow-hidden rounded-t-3xl sm:rounded-t-3xl bg-slate-100"></div>
   <div id="detail-content" class="flex-1 overflow-y-auto"></div>
   <div class="border-t border-slate-100 p-4 grid grid-cols-2 gap-2">
     <button onclick="closeDetail()" class="py-3 rounded-xl bg-slate-100 font-semibold">닫기</button>
@@ -1526,8 +1525,6 @@ function openDetail(id) {
   const p = data.products.find(pp => pp.id === id);
   if (!p) return;
   const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
-  $('#detail-img-wrap').innerHTML = '';
-
   // 이미지 + 텍스트 모두 스크롤 영역 안에
   $('#detail-content').innerHTML = `
     ${p.image
@@ -1574,7 +1571,6 @@ function openDetail(id) {
 function closeDetail() {
   $('#detail-overlay').classList.add('hidden');
   $('#detail-modal').classList.add('hidden');
-  $('#detail-img-wrap').innerHTML = '';
   $('#detail-content').innerHTML = '';
 }
 
