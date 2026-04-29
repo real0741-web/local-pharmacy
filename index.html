@@ -324,8 +324,10 @@
 <!-- 제품 상세 모달 -->
 <div id="detail-overlay" class="hidden fixed inset-0 z-40 bg-slate-900/50 fade" onclick="closeDetail()"></div>
 <div id="detail-modal" class="hidden fixed z-50 inset-x-0 bottom-0 sm:inset-0 sm:m-auto
-                              sm:max-w-lg sm:max-h-[90vh] sm:rounded-3xl
-                              rounded-t-3xl bg-white shadow-2xl slide-up overflow-hidden flex flex-col">
+                              sm:max-w-lg sm:rounded-3xl
+                              rounded-t-3xl bg-white shadow-2xl slide-up flex flex-col"
+     style="max-height:92vh">
+  <div id="detail-img-wrap" class="shrink-0 w-full overflow-hidden rounded-t-3xl sm:rounded-t-3xl bg-slate-100"></div>
   <div id="detail-content" class="flex-1 overflow-y-auto"></div>
   <div class="border-t border-slate-100 p-4 grid grid-cols-2 gap-2">
     <button onclick="closeDetail()" class="py-3 rounded-xl bg-slate-100 font-semibold">닫기</button>
@@ -1524,11 +1526,24 @@ function openDetail(id) {
   const p = data.products.find(pp => pp.id === id);
   if (!p) return;
   const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
+  // 이미지 — 상단 고정 영역 (스크롤 안 됨)
+  const imgWrap = $('#detail-img-wrap');
+  if (p.image) {
+    imgWrap.style.display = 'block';
+    imgWrap.innerHTML = `<img src="${p.image}" alt="${p.name}"
+      style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;"
+      onerror="this.closest('#detail-img-wrap').style.display='none'" />`;
+  } else {
+    imgWrap.style.display = 'flex';
+    imgWrap.style.alignItems = 'center';
+    imgWrap.style.justifyContent = 'center';
+    imgWrap.style.fontSize = '5rem';
+    imgWrap.style.aspectRatio = '4/3';
+    imgWrap.innerHTML = p.emoji || '📦';
+  }
+
+  // 텍스트 콘텐츠 — 스크롤 영역
   $('#detail-content').innerHTML = `
-    ${p.image
-      ? `<div style="aspect-ratio:4/3" class="overflow-hidden w-full"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" onerror="this.parentElement.style.display='none'" /></div>`
-      : `<div class="img-ph text-7xl" style="aspect-ratio:4/3">${p.emoji || '📦'}</div>`
-    }
     <div class="p-5">
       <div class="flex flex-wrap gap-1 mb-2">
         ${(p.badges||[]).map(b => `<span class="text-xs px-2 py-1 rounded-full font-semibold" style="background: var(--brand-soft); color: var(--brand);">${b}</span>`).join('')}
@@ -1558,6 +1573,7 @@ function openDetail(id) {
         ${p.stock < 10 ? '— 얼마 남지 않았어요' : ''}
       </div>
     </div>
+    <div class="h-4"></div>
   `;
   $('#detail-add').onclick = () => { addToCart(id); closeDetail(); };
   $('#detail-overlay').classList.remove('hidden');
@@ -1566,6 +1582,8 @@ function openDetail(id) {
 function closeDetail() {
   $('#detail-overlay').classList.add('hidden');
   $('#detail-modal').classList.add('hidden');
+  $('#detail-img-wrap').innerHTML = '';
+  $('#detail-content').innerHTML = '';
 }
 
 /* ===========================================
