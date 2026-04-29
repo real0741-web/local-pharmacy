@@ -1101,10 +1101,13 @@ function renderProductCards(list, grid) {
     card.className = 'card overflow-hidden cursor-pointer';
     card.onclick = () => openDetail(p.id);
     card.innerHTML = `
-      ${p.image
-        ? `<div style="aspect-ratio:4/3" class="overflow-hidden w-full"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" onerror="this.parentElement.style.display='none'" /></div>`
-        : `<div class="img-ph" style="aspect-ratio:4/3">${p.emoji || '📦'}</div>`
-      }
+      <div style="position:relative">
+        ${p.image
+          ? `<div style="aspect-ratio:4/3" class="overflow-hidden w-full"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" onerror="this.parentElement.style.display='none'" /></div>`
+          : `<div class="img-ph" style="aspect-ratio:4/3">${p.emoji || '📦'}</div>`
+        }
+        ${(!p.stock || p.stock <= 0) ? `<div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.55);color:white;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">품절</div>` : ''}
+      </div>
       <div class="p-3">
         <div class="flex flex-wrap gap-1 mb-1.5">
           ${(p.badges||[]).map(b => `
@@ -1122,9 +1125,10 @@ function renderProductCards(list, grid) {
           }
         </div>
         ${(!p.priceHidden && window._qrPriceVisible && discount > 0) ? `<div class="text-xs font-bold mt-0.5" style="color: var(--hot);">창고형 ${discount}% 절약</div>` : ''}
-        <button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold"
-                style="background: var(--brand-soft); color: var(--brand);"
-                onclick="event.stopPropagation(); addToCart('${p.id}')">🛒 담기</button>
+        ${(!p.stock || p.stock <= 0)
+          ? `<button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold" style="background:#f1f5f9;color:#94a3b8;cursor:not-allowed;" disabled>품절</button>`
+          : `<button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold" style="background: var(--brand-soft); color: var(--brand);" onclick="event.stopPropagation(); addToCart('${p.id}')">🛒 담기</button>`
+        }
       </div>
     `;
     grid.appendChild(card);
@@ -1557,14 +1561,23 @@ function openDetail(id) {
           <div class="font-semibold mb-1.5">📋 제품 정보</div>
           <div class="text-slate-600 leading-relaxed">${p.info}</div>
         </div>` : ''}
-      <div class="mt-4 text-xs text-slate-500">
-        실시간 재고: <b class="${p.stock < 10 ? 'text-orange-500' : 'text-emerald-600'}">${p.stock || 0}개</b>
-        ${p.stock < 10 ? '— 얼마 남지 않았어요' : ''}
-      </div>
+      ${(!p.stock || p.stock <= 0) ? `
+      <div class="mt-4">
+        <span class="inline-block bg-slate-100 text-slate-500 text-xs font-bold px-3 py-1 rounded-full">품절</span>
+      </div>` : ''}
     </div>
     <div class="h-4"></div>
   `;
-  $('#detail-add').onclick = () => { addToCart(id); closeDetail(); };
+  const addBtn = $('#detail-add');
+  if (!p.stock || p.stock <= 0) {
+    addBtn.textContent = '품절';
+    addBtn.disabled = true;
+    addBtn.style.background = '#e2e8f0';
+    addBtn.style.color = '#94a3b8';
+    addBtn.style.cursor = 'not-allowed';
+  } else {
+    addBtn.onclick = () => { addToCart(id); closeDetail(); };
+  }
   $('#detail-overlay').classList.remove('hidden');
   $('#detail-modal').classList.remove('hidden');
 }
