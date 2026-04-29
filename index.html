@@ -1101,8 +1101,8 @@ function renderProductCards(list, grid) {
     card.onclick = () => openDetail(p.id);
     card.innerHTML = `
       ${p.image
-        ? `<div class="aspect-square overflow-hidden"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" /></div>`
-        : `<div class="img-ph aspect-square">${p.emoji || '📦'}</div>`
+        ? `<div class="aspect-[4/3] overflow-hidden"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" /></div>`
+        : `<div class="img-ph aspect-[4/3]">${p.emoji || '📦'}</div>`
       }
       <div class="p-3">
         <div class="flex flex-wrap gap-1 mb-1.5">
@@ -1797,7 +1797,32 @@ function closeProductEditor() {
   $('#prod-editor-overlay').classList.add('hidden');
 }
 
-/* ─── 제품 이미지 업로드 ─── */
+/* ─── 제품 이미지 업로드 (4:3 센터크롭 → 800×600) ─── */
+function cropToRatio(img, ratioW, ratioH, outW, outH) {
+  const iw = img.width, ih = img.height;
+  const targetRatio = ratioW / ratioH;
+  const srcRatio    = iw / ih;
+  let cx, cy, cw, ch;
+  if (srcRatio > targetRatio) {
+    // 원본이 더 가로로 길 때 → 좌우 잘라냄
+    ch = ih;
+    cw = Math.round(ih * targetRatio);
+    cx = Math.round((iw - cw) / 2);
+    cy = 0;
+  } else {
+    // 원본이 더 세로로 길 때 → 위아래 잘라냄
+    cw = iw;
+    ch = Math.round(iw / targetRatio);
+    cx = 0;
+    cy = Math.round((ih - ch) / 2);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width  = outW;
+  canvas.height = outH;
+  canvas.getContext('2d').drawImage(img, cx, cy, cw, ch, 0, 0, outW, outH);
+  return canvas;
+}
+
 function handleProductImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1805,19 +1830,11 @@ function handleProductImageUpload(e) {
   reader.onload = ev => {
     const img = new Image();
     img.onload = () => {
-      const MAX = 800;
-      let w = img.width, h = img.height;
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-        else       { w = Math.round(w * MAX / h); h = MAX; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const b64 = canvas.toDataURL('image/jpeg', 0.82);
+      const canvas = cropToRatio(img, 4, 3, 800, 600);
+      const b64 = canvas.toDataURL('image/jpeg', 0.85);
       $('#prod-edit-image').value = b64;
       updateImgPreview();
-      showToast('사진이 등록되었습니다');
+      showToast('✅ 사진이 4:3 비율로 맞춰서 등록됐어요');
     };
     img.src = ev.target.result;
   };
@@ -2495,7 +2512,7 @@ function _renderQuasiResults(items, keyword, listEl, status) {
 function openBoxPhotoSearch() {
   const name = $('#prod-edit-name').value.trim() || $('#drug-name-input').value.trim();
   if (!name) { showToast('먼저 제품명을 입력하거나 검색해주세요'); return; }
-  const query = encodeURIComponent(name + ' 박스');
+  const query = encodeURIComponent(name);
   window.open(`https://search.naver.com/search.naver?where=image&query=${query}`, '_blank');
   showToast('원하는 사진에서 마우스 우클릭 → "새 탭에서 이미지 열기" → 주소창 URL 복사 후 붙여넣기 란에 붙여넣으세요 📋');
 }
@@ -2503,10 +2520,31 @@ function openBoxPhotoSearch() {
 function applyImageUrl() {
   const url = ($('#prod-img-url').value || '').trim();
   if (!url) { showToast('URL을 먼저 입력해주세요'); return; }
-  $('#prod-edit-image').value = url;
-  updateImgPreview();
-  $('#prod-img-url').value = '';
-  showToast('✅ 박스사진이 적용됐어요! 위 미리보기를 확인하세요');
+
+  // 이미지를 캔버스로 불러와서 정사각형 크롭 시도
+  const img = new Image();
+  img.crossOrigin = 'anonymous'; // CORS 허용 이미지면 크롭, 아니면 URL 그대로
+  img.onload = () => {
+    try {
+      const canvas = cropToRatio(img, 4, 3, 800, 600);
+      $('#prod-edit-image').value = canvas.toDataURL('image/jpeg', 0.85);
+      showToast('✅ 박스사진을 4:3 비율로 크롭해서 적용했어요!');
+    } catch(_) {
+      // CORS 차단 시 URL 그대로 저장 (CSS object-cover로 표시)
+      $('#prod-edit-image').value = url;
+      showToast('✅ 박스사진이 적용됐어요 (URL 방식)');
+    }
+    updateImgPreview();
+    $('#prod-img-url').value = '';
+  };
+  img.onerror = () => {
+    // 로드 실패 시 URL 그대로 저장
+    $('#prod-edit-image').value = url;
+    updateImgPreview();
+    $('#prod-img-url').value = '';
+    showToast('✅ 박스사진 URL이 적용됐어요');
+  };
+  img.src = url;
 }
 
 /* ─── 카메라 바코드 스캔 (html5-qrcode) ─── */
