@@ -2354,9 +2354,18 @@ async function searchDrugByName() {
         <div class="font-semibold leading-tight">${item.itemName||'?'}</div>
         <div class="text-xs text-slate-400">${item.entpName||''} · ${(item.efcyQesitm||'').replace(/<[^>]+>/g,'').slice(0,50)}...</div>`;
       btn.onclick = () => {
+        const strip = s => (s||'').replace(/<[^>]+>/g,'').trim();
         _fillProduct(_parseEDrug(item));
         listEl.classList.add('hidden');
         showToast(`✅ ${item.itemName} 정보를 가져왔습니다`);
+        // AI로 복약지도·제품정보 정리 (백그라운드)
+        _aiSummarizeDrug({
+          name: item.itemName || '',
+          efcy: strip(item.efcyQesitm).slice(0, 300),
+          use:  strip(item.useMethodQesitm).slice(0, 300),
+          warn: strip(item.atpnQesitm || item.atpnWarnQesitm).slice(0, 200),
+          ingr: strip(item.nbIngredQesitm || '').slice(0, 200),
+        });
       };
       listEl.appendChild(btn);
     });
@@ -2364,6 +2373,30 @@ async function searchDrugByName() {
   } catch(e) {
     status.textContent = `❌ 검색 실패: ${e.message}`;
     status.style.color = '#dc2626';
+  }
+}
+
+/* ─── AI 약품 설명 요약 (Cloudflare Worker → Claude Haiku) ─── */
+async function _aiSummarizeDrug({ name, efcy, use, warn, ingr }) {
+  const status = $('#barcode-status');
+  try {
+    status.textContent = `✅ ${name} — 🤖 AI가 복약지도 정리 중...`;
+    const res = await fetch(`${PROXY}/?action=summarizeDrug`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, efcy, use, warn, ingr }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const result = await res.json();
+    if (result.note) $('#prod-edit-note').value = result.note;
+    if (result.info) $('#prod-edit-info').value = result.info;
+    status.textContent = `✅ ${name} — 복약지도 AI 정리 완료 👍`;
+    status.style.color = '#0f766e';
+  } catch(e) {
+    // 실패해도 괜찮 — 기존 파싱 결과 유지
+    status.textContent = `✅ ${name} — 가격·재고는 직접 입력하세요`;
+    status.style.color = '#0f766e';
+    console.warn('AI 요약 실패:', e.message);
   }
 }
 
@@ -2434,15 +2467,19 @@ async function searchHealthFood() {
         _fillProduct({
           name:   item.PRDLST_NM || '',
           brand:  item.BSSH_NM   || '',
-          info:   [
-            item.BSSH_NM    && `제조사: ${item.BSSH_NM}`,
-            item.PRMS_DT    && `허가일: ${item.PRMS_DT}`,
-            item.STDR_STTEMNT_NO && `허가번호: ${item.STDR_STTEMNT_NO}`,
-          ].filter(Boolean).join('\n'),
+          info:   item.BSSH_NM ? `제조사: ${item.BSSH_NM}` : '',
           source: '식약처 건강기능식품'
         });
         listEl.classList.add('hidden');
         showToast(`✅ ${item.PRDLST_NM} 정보를 가져왔습니다`);
+        // AI로 복약지도·제품정보 정리 (백그라운드)
+        _aiSummarizeDrug({
+          name: item.PRDLST_NM || '',
+          efcy: (item.IFTKN_ATNT_MATR_CN || item.NTK_MTHD || '').slice(0, 300),
+          use:  (item.NTK_MTHD || '').slice(0, 200),
+          warn: (item.IFTKN_ATNT_MATR_CN || '').slice(0, 200),
+          ingr: (item.MAIN_FNCTN || item.STDR_STTEMNT_NO || '').slice(0, 200),
+        });
       };
       listEl.appendChild(btn);
     });
@@ -2508,19 +2545,23 @@ function _renderQuasiResults(items, keyword, listEl, status) {
       <div class="text-xs text-slate-400">${item.ENTP_NAME || ''} · ${item.ETC_OTC_CODE || ''} · ${item.ITEM_PERMIT_DATE || ''}</div>`;
     btn.onclick = () => {
       _fillProduct({
-        name:   item.ITEM_NAME  || '',
-        brand:  item.ENTP_NAME  || '',
-        qty:    item.PACK_UNIT  || '',
-        info:   [
-          item.ENTP_NAME    && `제조사: ${item.ENTP_NAME}`,
-          item.MAIN_INGR    && `주성분: ${String(item.MAIN_INGR).slice(0,120)}`,
-          item.ETC_OTC_CODE && `구분: ${item.ETC_OTC_CODE}`,
-        ].filter(Boolean).join('\n'),
+        name:    item.ITEM_NAME || '',
+        brand:   item.ENTP_NAME || '',
+        qty:     item.PACK_UNIT || '',
+        info:    item.MAIN_INGR ? `주성분: ${String(item.MAIN_INGR).slice(0,120)}` : '',
         imageUrl: item.BIG_PRDT_IMG_URL || '',
-        source: '식약처 의약외품'
+        source:  '식약처 의약외품'
       });
       listEl.classList.add('hidden');
       showToast(`✅ ${item.ITEM_NAME} 정보를 가져왔습니다`);
+      // AI로 복약지도·제품정보 정리 (백그라운드)
+      _aiSummarizeDrug({
+        name: item.ITEM_NAME  || '',
+        efcy: String(item.EE_DOC_DATA  || '').replace(/<[^>]+>/g,'').slice(0, 300),
+        use:  String(item.UD_DOC_DATA  || '').replace(/<[^>]+>/g,'').slice(0, 300),
+        warn: String(item.NB_DOC_DATA  || '').replace(/<[^>]+>/g,'').slice(0, 200),
+        ingr: String(item.MAIN_INGR    || '').slice(0, 200),
+      });
     };
     listEl.appendChild(btn);
   });
