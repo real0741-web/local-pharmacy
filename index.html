@@ -1526,24 +1526,16 @@ function openDetail(id) {
   const p = data.products.find(pp => pp.id === id);
   if (!p) return;
   const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
-  // 이미지 — 상단 고정 영역 (스크롤 안 됨)
-  const imgWrap = $('#detail-img-wrap');
-  if (p.image) {
-    imgWrap.style.display = 'block';
-    imgWrap.innerHTML = `<img src="${p.image}" alt="${p.name}"
-      style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;"
-      onerror="this.closest('#detail-img-wrap').style.display='none'" />`;
-  } else {
-    imgWrap.style.display = 'flex';
-    imgWrap.style.alignItems = 'center';
-    imgWrap.style.justifyContent = 'center';
-    imgWrap.style.fontSize = '5rem';
-    imgWrap.style.aspectRatio = '4/3';
-    imgWrap.innerHTML = p.emoji || '📦';
-  }
+  $('#detail-img-wrap').innerHTML = '';
 
-  // 텍스트 콘텐츠 — 스크롤 영역
+  // 이미지 + 텍스트 모두 스크롤 영역 안에
   $('#detail-content').innerHTML = `
+    ${p.image
+      ? `<img src="${p.image}" alt="${p.name}"
+           style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;"
+           onerror="this.style.display='none'" />`
+      : `<div style="aspect-ratio:4/3;background:linear-gradient(135deg,#f1f5f9,#e2e8f0);display:flex;align-items:center;justify-content:center;font-size:5rem;">${p.emoji || '📦'}</div>`
+    }
     <div class="p-5">
       <div class="flex flex-wrap gap-1 mb-2">
         ${(p.badges||[]).map(b => `<span class="text-xs px-2 py-1 rounded-full font-semibold" style="background: var(--brand-soft); color: var(--brand);">${b}</span>`).join('')}
