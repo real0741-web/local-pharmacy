@@ -710,12 +710,19 @@
         <button onclick="startBarcodeCamera()" class="px-3 py-2 rounded-lg text-sm font-semibold btn-primary shrink-0">📷 스캔</button>
       </div>
 
-      <!-- 제품명 검색 행 (e약은요 DB) -->
+      <!-- 제품 종류 탭 -->
+      <div class="flex gap-1 text-xs font-semibold">
+        <button id="stype-drug"    onclick="setSearchType('drug')"    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-teal-600 text-white transition-colors">💊 의약품</button>
+        <button id="stype-health"  onclick="setSearchType('health')"  class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors">🌿 건강기능식품</button>
+        <button id="stype-quasi"   onclick="setSearchType('quasi')"   class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors">🧴 의약외품</button>
+      </div>
+
+      <!-- 제품명 검색 행 -->
       <div class="flex gap-2">
-        <input id="drug-name-input" type="text" placeholder="의약품 제품명 검색 (예: 타이레놀)"
+        <input id="drug-name-input" type="text" placeholder="제품명 검색 (예: 타이레놀, 락토핏, 박카스)"
                class="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-teal-500"
-               onkeydown="if(event.key==='Enter') searchDrugByName()" />
-        <button onclick="searchDrugByName()" class="px-3 py-2 rounded-lg text-sm font-semibold btn-secondary shrink-0">검색</button>
+               onkeydown="if(event.key==='Enter') searchProductByName()" />
+        <button onclick="searchProductByName()" class="px-3 py-2 rounded-lg text-sm font-semibold btn-secondary shrink-0">검색</button>
       </div>
 
       <!-- 상태 메시지 -->
@@ -748,7 +755,18 @@
           <!-- 이모지 입력 (사진 없을 때 대용) -->
           <input id="prod-edit-emoji" type="text" maxlength="2" placeholder="이모지 입력 (예: 💊)" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" oninput="updateImgPreview()" />
           <button type="button" onclick="clearProductImage()" class="text-xs text-slate-400 hover:text-red-400">사진 삭제</button>
+          <!-- 박스사진 쇼핑몰 검색 -->
+          <button type="button" onclick="openBoxPhotoSearch()"
+            class="w-full text-xs py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold">
+            🔍 네이버에서 박스사진 찾기
+          </button>
         </div>
+      </div>
+      <!-- 이미지 URL 직접 붙여넣기 -->
+      <div class="flex gap-2 mt-2">
+        <input id="prod-img-url" type="text" placeholder="📋 박스사진 URL 붙여넣기 (쇼핑몰에서 이미지 주소 복사)"
+               class="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-teal-500" />
+        <button type="button" onclick="applyImageUrl()" class="px-3 py-2 rounded-lg text-xs font-semibold btn-secondary shrink-0">적용</button>
       </div>
       <input id="prod-edit-image" type="hidden" />
       <!-- AI 분석 버튼 -->
@@ -2313,6 +2331,184 @@ async function searchDrugByName() {
   }
 }
 
+/* ─── 검색 타입 선택 ─── */
+let _searchType = 'drug'; // drug | health | quasi
+
+function setSearchType(type) {
+  _searchType = type;
+  ['drug','health','quasi'].forEach(t => {
+    const btn = $(`#stype-${t}`);
+    if (t === type) {
+      btn.classList.add('bg-teal-600','text-white');
+      btn.classList.remove('bg-white','text-slate-600');
+    } else {
+      btn.classList.remove('bg-teal-600','text-white');
+      btn.classList.add('bg-white','text-slate-600');
+    }
+  });
+  const placeholders = {
+    drug:   '의약품 제품명 (예: 타이레놀, 판콜에이)',
+    health: '건강기능식품 제품명 (예: 락토핏, 루테인)',
+    quasi:  '의약외품 제품명 (예: 박카스, 후시딘)',
+  };
+  $('#drug-name-input').placeholder = placeholders[type];
+}
+
+/** 통합 검색 진입점 */
+function searchProductByName() {
+  if (_searchType === 'drug')   searchDrugByName();
+  else if (_searchType === 'health') searchHealthFood();
+  else if (_searchType === 'quasi')  searchQuasiDrug();
+}
+
+/* ─── 건강기능식품 검색 (식약처 HtfsInfoService) ─── */
+async function searchHealthFood() {
+  const keyword = ($('#drug-name-input').value || '').trim();
+  if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
+  const KEY = getMfdsKey();
+  if (!KEY) { showToast('설정 탭에서 공공데이터 API 키를 먼저 등록해주세요'); return; }
+  const status = $('#barcode-status');
+  const listEl = $('#drug-search-results');
+  status.textContent = `🌿 건강기능식품 "${keyword}" 검색 중...`;
+  status.style.color = '#64748b';
+  listEl.classList.add('hidden');
+  listEl.innerHTML = '';
+  try {
+    const url = `https://apis.data.go.kr/1471000/HtfsInfoService01/getHtfsItem01` +
+                `?serviceKey=${encodeURIComponent(KEY)}&pageNo=1&numOfRows=10&type=json` +
+                `&PRDLST_NM=${encodeURIComponent(keyword)}`;
+    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
+    const json = await res.json();
+    const items = json?.body?.items;
+    if (!items || items.length === 0) {
+      status.textContent = `⚠️ "${keyword}" 건강기능식품 검색 결과 없음`;
+      status.style.color = '#b45309';
+      return;
+    }
+    status.textContent = `🌿 "${keyword}" 건강기능식품 ${items.length}건 — 선택하면 자동 입력`;
+    status.style.color = '#0f766e';
+    items.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'w-full text-left px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-sm transition-colors';
+      btn.innerHTML = `
+        <div class="font-semibold leading-tight">${item.PRDLST_NM || '?'}</div>
+        <div class="text-xs text-slate-400">${item.BSSH_NM || ''} · ${item.STDR_STTEMNT_NO || ''}</div>`;
+      btn.onclick = () => {
+        _fillProduct({
+          name:   item.PRDLST_NM || '',
+          brand:  item.BSSH_NM   || '',
+          info:   [
+            item.BSSH_NM    && `제조사: ${item.BSSH_NM}`,
+            item.PRMS_DT    && `허가일: ${item.PRMS_DT}`,
+            item.STDR_STTEMNT_NO && `허가번호: ${item.STDR_STTEMNT_NO}`,
+          ].filter(Boolean).join('\n'),
+          source: '식약처 건강기능식품'
+        });
+        listEl.classList.add('hidden');
+        showToast(`✅ ${item.PRDLST_NM} 정보를 가져왔습니다`);
+      };
+      listEl.appendChild(btn);
+    });
+    listEl.classList.remove('hidden');
+  } catch(e) {
+    status.textContent = `❌ 검색 실패: ${e.message}`;
+    status.style.color = '#dc2626';
+  }
+}
+
+/* ─── 의약외품 검색 (식약처 DrugPrdtPrmsnInfoService05) ─── */
+async function searchQuasiDrug() {
+  const keyword = ($('#drug-name-input').value || '').trim();
+  if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
+  const KEY = getMfdsKey();
+  if (!KEY) { showToast('설정 탭에서 공공데이터 API 키를 먼저 등록해주세요'); return; }
+  const status = $('#barcode-status');
+  const listEl = $('#drug-search-results');
+  status.textContent = `🧴 의약외품 "${keyword}" 검색 중...`;
+  status.style.color = '#64748b';
+  listEl.classList.add('hidden');
+  listEl.innerHTML = '';
+  try {
+    const url = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
+                `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=10` +
+                `&ITEM_NAME=${encodeURIComponent(keyword)}&PRDUCT_TYPE=%EC%9D%98%EC%95%BD%EC%99%B8%ED%92%88`; // 의약외품 필터
+    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
+    const json = await res.json();
+    const items = json?.body?.items;
+    if (!items || items.length === 0) {
+      // 필터 없이 재시도
+      const url2 = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
+                   `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=15` +
+                   `&ITEM_NAME=${encodeURIComponent(keyword)}`;
+      const res2  = await proxyFetch(url2, { signal: AbortSignal.timeout(9000) });
+      const json2 = await res2.json();
+      const items2 = json2?.body?.items;
+      if (!items2 || items2.length === 0) {
+        status.textContent = `⚠️ "${keyword}" 의약외품 검색 결과 없음`;
+        status.style.color = '#b45309';
+        return;
+      }
+      _renderQuasiResults(items2, keyword, listEl, status);
+      return;
+    }
+    _renderQuasiResults(items, keyword, listEl, status);
+  } catch(e) {
+    status.textContent = `❌ 검색 실패: ${e.message}`;
+    status.style.color = '#dc2626';
+  }
+}
+
+function _renderQuasiResults(items, keyword, listEl, status) {
+  status.textContent = `🧴 "${keyword}" ${items.length}건 — 선택하면 자동 입력`;
+  status.style.color = '#0f766e';
+  listEl.innerHTML = '';
+  items.forEach(item => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w-full text-left px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-sm transition-colors';
+    btn.innerHTML = `
+      <div class="font-semibold leading-tight">${item.ITEM_NAME || '?'}</div>
+      <div class="text-xs text-slate-400">${item.ENTP_NAME || ''} · ${item.ETC_OTC_CODE || ''} · ${item.ITEM_PERMIT_DATE || ''}</div>`;
+    btn.onclick = () => {
+      _fillProduct({
+        name:   item.ITEM_NAME  || '',
+        brand:  item.ENTP_NAME  || '',
+        qty:    item.PACK_UNIT  || '',
+        info:   [
+          item.ENTP_NAME    && `제조사: ${item.ENTP_NAME}`,
+          item.MAIN_INGR    && `주성분: ${String(item.MAIN_INGR).slice(0,120)}`,
+          item.ETC_OTC_CODE && `구분: ${item.ETC_OTC_CODE}`,
+        ].filter(Boolean).join('\n'),
+        imageUrl: item.BIG_PRDT_IMG_URL || '',
+        source: '식약처 의약외품'
+      });
+      listEl.classList.add('hidden');
+      showToast(`✅ ${item.ITEM_NAME} 정보를 가져왔습니다`);
+    };
+    listEl.appendChild(btn);
+  });
+  listEl.classList.remove('hidden');
+}
+
+/* ─── 박스사진 쇼핑몰 검색 + URL 붙여넣기 ─── */
+function openBoxPhotoSearch() {
+  const name = $('#prod-edit-name').value.trim() || $('#drug-name-input').value.trim();
+  if (!name) { showToast('먼저 제품명을 입력하거나 검색해주세요'); return; }
+  const query = encodeURIComponent(name + ' 박스');
+  window.open(`https://search.naver.com/search.naver?where=image&query=${query}`, '_blank');
+  showToast('원하는 사진에서 마우스 우클릭 → "새 탭에서 이미지 열기" → 주소창 URL 복사 후 붙여넣기 란에 붙여넣으세요 📋');
+}
+
+function applyImageUrl() {
+  const url = ($('#prod-img-url').value || '').trim();
+  if (!url) { showToast('URL을 먼저 입력해주세요'); return; }
+  $('#prod-edit-image').value = url;
+  updateImgPreview();
+  $('#prod-img-url').value = '';
+  showToast('✅ 박스사진이 적용됐어요! 위 미리보기를 확인하세요');
+}
+
 /* ─── 카메라 바코드 스캔 (html5-qrcode) ─── */
 let _html5QrCode = null;
 async function startBarcodeCamera() {
@@ -2574,6 +2770,8 @@ async function analyzeProductWithAI() {
     const match = base64.match(/^data:([^;]+);base64,(.+)$/);
     if (match) { mediaType = match[1]; base64 = match[2]; }
 
+    statusEl.textContent = '🧠 Claude Sonnet이 분석 중... (5~10초)';
+
     const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2583,19 +2781,31 @@ async function analyzeProductWithAI() {
     const result = await resp.json();
     if (result.error) throw new Error(result.error);
 
-    // 폼 자동 채우기 (기존 값 덮어쓰기 전 확인)
-    const fields = [
-      { id: 'prod-edit-name',    val: result.name,           label: '제품명' },
-      { id: 'prod-edit-tagline', val: result.tagline,        label: '한줄소개' },
-      { id: 'prod-edit-note',    val: result.pharmacistNote, label: '복약지도' },
-    ];
+    // 폼 자동 채우기
     let filled = 0;
-    for (const f of fields) {
-      if (f.val) { $('#' + f.id).value = f.val; filled++; }
+    const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
+
+    setField('prod-edit-name',    result.name);
+    setField('prod-edit-tagline', result.tagline);
+    setField('prod-edit-note',    result.pharmacistNote);
+
+    // 이모지 자동 입력
+    if (result.suggestedEmoji) {
+      $('#prod-edit-emoji').value = result.suggestedEmoji;
+      updateImgPreview?.();
+      filled++;
+    }
+    // 뱃지 자동 입력
+    if (result.suggestedBadges?.length) {
+      $('#prod-edit-badges').value = result.suggestedBadges.join(', ');
+      filled++;
     }
 
+    // 결과 요약 표시
+    const nameStr = result.name ? `\n📦 ${result.name}` : '';
+    const companyStr = result.company ? ` (${result.company})` : '';
     statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-    statusEl.textContent = `✅ ${filled}개 항목 자동 입력 완료! 내용을 확인하고 필요하면 수정하세요.`;
+    statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}${companyStr}`;
 
   } catch (e) {
     statusEl.className = 'text-xs text-center mt-1 text-red-500';
