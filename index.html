@@ -1101,8 +1101,8 @@ function renderProductCards(list, grid) {
     card.onclick = () => openDetail(p.id);
     card.innerHTML = `
       ${p.image
-        ? `<div class="aspect-[4/3] overflow-hidden"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" /></div>`
-        : `<div class="img-ph aspect-[4/3]">${p.emoji || '📦'}</div>`
+        ? `<div style="aspect-ratio:4/3" class="overflow-hidden w-full"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" onerror="this.parentElement.style.display='none'" /></div>`
+        : `<div class="img-ph" style="aspect-ratio:4/3">${p.emoji || '📦'}</div>`
       }
       <div class="p-3">
         <div class="flex flex-wrap gap-1 mb-1.5">
@@ -1526,8 +1526,8 @@ function openDetail(id) {
   const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
   $('#detail-content').innerHTML = `
     ${p.image
-      ? `<div class="aspect-[4/3] overflow-hidden"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" /></div>`
-      : `<div class="img-ph aspect-[4/3] text-7xl">${p.emoji || '📦'}</div>`
+      ? `<div style="aspect-ratio:4/3" class="overflow-hidden w-full"><img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover" onerror="this.parentElement.style.display='none'" /></div>`
+      : `<div class="img-ph text-7xl" style="aspect-ratio:4/3">${p.emoji || '📦'}</div>`
     }
     <div class="p-5">
       <div class="flex flex-wrap gap-1 mb-2">
