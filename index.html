@@ -3043,10 +3043,11 @@ async function analyzeProductWithAI() {
     }
 
     // 결과 요약 표시
-    const nameStr = result.name ? `\n📦 ${result.name}` : '';
+    const nameStr    = result.name    ? `\n📦 ${result.name}` : '';
     const companyStr = result.company ? ` (${result.company})` : '';
+    const srcStr     = result._source ? ` [${result._source}]` : '';
     statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-    statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}${companyStr}`;
+    statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}${companyStr}${srcStr}`;
 
   } catch (e) {
     statusEl.className = 'text-xs text-center mt-1 text-red-500';
