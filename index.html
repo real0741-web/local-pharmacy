@@ -3019,9 +3019,8 @@ async function analyzeProductWithAI() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageData: base64, mediaType })
     });
-    if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
     const result = await resp.json();
-    if (result.error) throw new Error(result.error);
+    if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
 
     // 폼 자동 채우기
     let filled = 0;
