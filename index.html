@@ -2977,77 +2977,90 @@ tryLoadRemoteData(); // 백그라운드에서 Cloudflare KV 최신 데이터 로
    🤖 AI 제품 분석 (Claude API ← Cloudflare Worker)
    ═══════════════════════════════════════════════ */
 async function analyzeProductWithAI() {
-  const imgData = $('#prod-edit-image').value;
-  const imgFile = $('#prod-img-file').files?.[0];
-  const statusEl = $('#ai-analyze-status');
-  const btn = $('#ai-analyze-btn');
+  const imgData   = $('#prod-edit-image').value;
+  const imgFile   = $('#prod-img-file').files?.[0];
+  const existName = ($('#prod-edit-name').value || '').trim();
+  const statusEl  = $('#ai-analyze-status');
+  const btn       = $('#ai-analyze-btn');
 
-  // 사진이 없으면 업로드 유도
-  if (!imgData && !imgFile) {
+  // 제품명도 없고 사진도 없으면 안내
+  if (!existName && !imgData && !imgFile) {
     statusEl.className = 'text-xs text-center mt-1 text-orange-500';
-    statusEl.textContent = '⚠️ 먼저 제품 사진을 업로드해주세요';
+    statusEl.textContent = '⚠️ 제품명을 입력하거나 사진을 업로드해주세요';
     statusEl.classList.remove('hidden');
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ AI 분석 중...';
+  btn.innerHTML = '⏳ AI 분석 중...';
   statusEl.className = 'text-xs text-center mt-1 text-slate-400';
-  statusEl.textContent = '사진을 읽고 있어요...';
   statusEl.classList.remove('hidden');
 
   try {
-    // base64 추출
-    let base64 = imgData; // 이미 저장된 이미지
-    let mediaType = 'image/jpeg';
-    if (imgFile && !base64) {
-      const reader = new FileReader();
-      base64 = await new Promise((res, rej) => {
-        reader.onload = e => res(e.target.result);
-        reader.onerror = rej;
-        reader.readAsDataURL(imgFile);
+    let base64 = null, mediaType = 'image/jpeg';
+
+    // ① 폼에 제품명이 있으면 사진 분석 없이 바로 DB 검색
+    if (existName) {
+      statusEl.textContent = `🔍 "${existName}" 식약처 DB 검색 중...`;
+      const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productName: existName })
       });
-    }
-    // "data:image/jpeg;base64,XXXX" → 순수 base64 + mediaType 분리
-    const match = base64.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) { mediaType = match[1]; base64 = match[2]; }
+      const result = await resp.json();
+      if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
 
-    statusEl.textContent = '🧠 Claude Sonnet이 분석 중... (5~10초)';
-
-    const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageData: base64, mediaType })
-    });
-    const result = await resp.json();
-    if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
-
-    // 폼 자동 채우기
-    let filled = 0;
-    const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
-
-    setField('prod-edit-name',    result.name);
-    setField('prod-edit-tagline', result.tagline);
-    setField('prod-edit-note',    result.pharmacistNote);
-
-    // 이모지 자동 입력
-    if (result.suggestedEmoji) {
-      $('#prod-edit-emoji').value = result.suggestedEmoji;
-      updateImgPreview?.();
-      filled++;
-    }
-    // 뱃지 자동 입력
-    if (result.suggestedBadges?.length) {
-      $('#prod-edit-badges').value = result.suggestedBadges.join(', ');
-      filled++;
+      // 폼 채우기
+      let filled = 0;
+      const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
+      setField('prod-edit-tagline', result.tagline);
+      setField('prod-edit-note',    result.pharmacistNote);
+      if (result.suggestedEmoji)  { $('#prod-edit-emoji').value  = result.suggestedEmoji;  filled++; }
+      if (result.suggestedBadges?.length) { $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      const srcStr = result._source ? ` [${result._source}]` : '';
+      statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
+      statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${srcStr}`;
+      return;
     }
 
-    // 결과 요약 표시
-    const nameStr    = result.name    ? `\n📦 ${result.name}` : '';
-    const companyStr = result.company ? ` (${result.company})` : '';
-    const srcStr     = result._source ? ` [${result._source}]` : '';
-    statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-    statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}${companyStr}${srcStr}`;
+    // ② 직접 업로드한 사진 (base64) → Worker에 전송
+    if (imgFile) {
+      const reader = new FileReader();
+      base64 = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(imgFile); });
+    } else if (imgData && imgData.startsWith('data:')) {
+      base64 = imgData;
+    }
+
+    if (base64) {
+      const match = base64.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) { mediaType = match[1]; base64 = match[2]; }
+      statusEl.textContent = '🧠 사진 분석 중... (5~10초)';
+      const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageData: base64, mediaType })
+      });
+      const result = await resp.json();
+      if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
+
+      // 폼 자동 채우기
+      let filled = 0;
+      const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
+      setField('prod-edit-name',    result.name);
+      setField('prod-edit-tagline', result.tagline);
+      setField('prod-edit-note',    result.pharmacistNote);
+      if (result.suggestedEmoji)        { $('#prod-edit-emoji').value  = result.suggestedEmoji; updateImgPreview?.(); filled++; }
+      if (result.suggestedBadges?.length) { $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      const nameStr2 = result.name ? `\n📦 ${result.name}` : '';
+      const srcStr2  = result._source ? ` [${result._source}]` : '';
+      statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
+      statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr2}${srcStr2}`;
+      return;
+    }
+
+    // ③ URL 이미지만 있는 경우 → 제품명 입력 안내
+    statusEl.className = 'text-xs text-center mt-1 text-orange-500';
+    statusEl.textContent = '⚠️ URL 사진은 AI 분석이 어려워요. 제품명을 먼저 입력하거나 사진을 직접 업로드해주세요.';
 
   } catch (e) {
     statusEl.className = 'text-xs text-center mt-1 text-red-500';
