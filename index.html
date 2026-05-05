@@ -651,6 +651,7 @@
           <div class="text-xs text-slate-500 mb-2">아래 버튼으로 웹훅을 한 번만 등록하면 바로 사용할 수 있어요.</div>
           <div class="flex gap-2 flex-wrap items-center">
             <button onclick="registerTelegramWebhook()" class="btn-primary">🔗 텔레그램 웹훅 등록</button>
+            <button onclick="checkTelegramWebhook()" class="btn-secondary text-xs">🔍 상태 확인</button>
             <button onclick="deleteTelegramWebhook()" class="btn-secondary text-xs">웹훅 해제</button>
           </div>
           <div id="webhook-status" class="mt-2 text-xs text-slate-400"></div>
@@ -2813,6 +2814,31 @@ async function registerTelegramWebhook() {
     }
   } catch(e) {
     statusEl.textContent = `❌ 오류: ${e.message}`;
+    statusEl.style.color = '#dc2626';
+  }
+}
+async function checkTelegramWebhook() {
+  const statusEl = $('#webhook-status');
+  statusEl.textContent = '🔍 웹훅 상태 확인 중...';
+  statusEl.style.color = '#64748b';
+  try {
+    const res  = await fetch(`${PROXY}/?action=getWebhookInfo`);
+    const json = await res.json();
+    if (json.ok) {
+      const info = json.result;
+      const url  = info.url || '(없음)';
+      const err  = info.last_error_message || '없음';
+      const pending = info.pending_update_count ?? 0;
+      statusEl.innerHTML =
+        `✅ 웹훅 URL: <code class="text-xs bg-slate-100 px-1 rounded break-all">${url}</code><br/>` +
+        `최근 에러: ${err} | 대기 메시지: ${pending}건`;
+      statusEl.style.color = url ? '#0f766e' : '#b45309';
+    } else {
+      statusEl.textContent = `❌ ${json.description || JSON.stringify(json)}`;
+      statusEl.style.color = '#dc2626';
+    }
+  } catch(e) {
+    statusEl.textContent = `❌ ${e.message}`;
     statusEl.style.color = '#dc2626';
   }
 }
