@@ -641,6 +641,23 @@
 
         <hr class="border-slate-100" />
 
+        <!-- 텔레그램 봇 제품 등록 -->
+        <div>
+          <div class="font-bold mb-2">📲 텔레그램으로 제품 등록</div>
+          <div class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-sm text-teal-800 leading-relaxed mb-3">
+            텔레그램 봇에 제품명과 가격을 보내면 AI가 자동으로 약품을 검색하고 복약지도까지 생성해서 바로 등록해줍니다.<br/>
+            <span class="text-xs text-teal-600 mt-1 block">예: <code class="bg-teal-100 px-1 rounded">타이레놀 2500원, 판콜에이 4000원, 인사돌 15000원</code></span>
+          </div>
+          <div class="text-xs text-slate-500 mb-2">아래 버튼으로 웹훅을 한 번만 등록하면 바로 사용할 수 있어요.</div>
+          <div class="flex gap-2 flex-wrap items-center">
+            <button onclick="registerTelegramWebhook()" class="btn-primary">🔗 텔레그램 웹훅 등록</button>
+            <button onclick="deleteTelegramWebhook()" class="btn-secondary text-xs">웹훅 해제</button>
+          </div>
+          <div id="webhook-status" class="mt-2 text-xs text-slate-400"></div>
+        </div>
+
+        <hr class="border-slate-100" />
+
         <div>
           <div class="font-bold mb-2">☁️ Cloudflare 자동 동기화</div>
           <div class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-xs text-teal-800 leading-relaxed mb-3">
@@ -2321,7 +2338,7 @@ async function lookupBarcode() {
   status.style.color = '#b45309';
 }
 
-/* ─── 제품명으로 e약은요 검색 ─── */
+/* ─── 제품명으로 의약품 검색 (e약은요 + 식약처 전체 허가DB 동시 조회) ─── */
 async function searchDrugByName() {
   const keyword = ($('#drug-name-input').value || '').trim();
   if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
@@ -2333,32 +2350,52 @@ async function searchDrugByName() {
   status.style.color = '#64748b';
   listEl.classList.add('hidden');
   listEl.innerHTML = '';
+
+  const strip = s => (s||'').replace(/<[^>]+>/g,'').trim();
+
   try {
-    const url  = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
-                 `?serviceKey=${encodeURIComponent(KEY)}&itemName=${encodeURIComponent(keyword)}&type=json&numOfRows=10`;
-    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
-    const json = await res.json();
-    const items = json?.body?.items;
-    if (!items || items.length === 0) {
+    // 두 DB 동시 조회
+    const [easyRes, fullRes] = await Promise.allSettled([
+      proxyFetch(
+        `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
+        `?serviceKey=${encodeURIComponent(KEY)}&itemName=${encodeURIComponent(keyword)}&type=json&numOfRows=10`,
+        { signal: AbortSignal.timeout(9000) }
+      ).then(r => r.json()),
+      proxyFetch(
+        `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
+        `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=20&ITEM_NAME=${encodeURIComponent(keyword)}`,
+        { signal: AbortSignal.timeout(9000) }
+      ).then(r => r.json()),
+    ]);
+
+    const easyItems = easyRes.status === 'fulfilled' ? (easyRes.value?.body?.items || []) : [];
+    const fullItems = fullRes.status === 'fulfilled' ? (fullRes.value?.body?.items || []) : [];
+
+    // e약은요 우선, 전체 허가DB는 중복 제거 후 추가
+    const easyNames = new Set(easyItems.map(i => (i.itemName||'').trim()));
+    const uniqueFull = fullItems.filter(i => !easyNames.has((i.ITEM_NAME||'').trim()));
+    const totalCount = easyItems.length + uniqueFull.length;
+
+    if (totalCount === 0) {
       status.textContent = `⚠️ "${keyword}" 검색 결과 없음 — 다른 키워드로 시도해보세요`;
       status.style.color = '#b45309';
       return;
     }
-    status.textContent = `"${keyword}" 검색결과 ${items.length}건 — 선택하면 자동 입력됩니다`;
+    status.textContent = `"${keyword}" 검색결과 ${totalCount}건 — 선택하면 자동 입력됩니다`;
     status.style.color = '#0f766e';
-    items.forEach(item => {
+
+    // ① e약은요 결과 (복약지도 정보 풍부)
+    easyItems.forEach(item => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'w-full text-left px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-sm transition-colors';
       btn.innerHTML = `
         <div class="font-semibold leading-tight">${item.itemName||'?'}</div>
-        <div class="text-xs text-slate-400">${item.entpName||''} · ${(item.efcyQesitm||'').replace(/<[^>]+>/g,'').slice(0,50)}...</div>`;
+        <div class="text-xs text-slate-400">${item.entpName||''} · ${strip(item.efcyQesitm).slice(0,50)}...</div>`;
       btn.onclick = () => {
-        const strip = s => (s||'').replace(/<[^>]+>/g,'').trim();
         _fillProduct(_parseEDrug(item));
         listEl.classList.add('hidden');
         showToast(`✅ ${item.itemName} 정보를 가져왔습니다`);
-        // AI로 복약지도·제품정보 정리 (백그라운드)
         _aiSummarizeDrug({
           name: item.itemName || '',
           efcy: strip(item.efcyQesitm).slice(0, 300),
@@ -2369,6 +2406,45 @@ async function searchDrugByName() {
       };
       listEl.appendChild(btn);
     });
+
+    // ② 전체 허가DB 추가 결과 (인사돌 등 e약은요 미등록 약)
+    if (uniqueFull.length > 0) {
+      if (easyItems.length > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'text-xs text-slate-400 px-2 py-1.5 font-semibold border-t border-slate-100 mt-1';
+        divider.textContent = '── 추가 검색결과 (식약처 전체 허가DB) ──';
+        listEl.appendChild(divider);
+      }
+      uniqueFull.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-left px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-teal-50 hover:border-teal-400 text-sm transition-colors';
+        btn.innerHTML = `
+          <div class="font-semibold leading-tight">${item.ITEM_NAME||'?'}</div>
+          <div class="text-xs text-slate-400">${item.ENTP_NAME||''} · ${item.ETC_OTC_CODE||''} · ${strip(item.MAIN_INGR||'').slice(0,40)}</div>`;
+        btn.onclick = () => {
+          _fillProduct({
+            name:     item.ITEM_NAME || '',
+            brand:    item.ENTP_NAME || '',
+            qty:      item.PACK_UNIT || '',
+            info:     item.MAIN_INGR ? `주성분: ${String(item.MAIN_INGR).slice(0,120)}` : '',
+            imageUrl: item.BIG_PRDT_IMG_URL || '',
+            source:   '식약처 허가DB',
+          });
+          listEl.classList.add('hidden');
+          showToast(`✅ ${item.ITEM_NAME} 정보를 가져왔습니다`);
+          _aiSummarizeDrug({
+            name: item.ITEM_NAME || '',
+            efcy: strip(item.EE_DOC_DATA || '').slice(0, 300),
+            use:  strip(item.UD_DOC_DATA || '').slice(0, 300),
+            warn: strip(item.NB_DOC_DATA || '').slice(0, 200),
+            ingr: strip(item.MAIN_INGR   || '').slice(0, 200),
+          });
+        };
+        listEl.appendChild(btn);
+      });
+    }
+
     listEl.classList.remove('hidden');
   } catch(e) {
     status.textContent = `❌ 검색 실패: ${e.message}`;
@@ -2710,6 +2786,59 @@ function saveMfdsKey() {
 function copyNtfyTopic() {
   const topic = getNtfyTopic();
   navigator.clipboard.writeText(topic).then(() => showToast('알림 코드가 복사되었습니다'));
+}
+
+/* ─── 텔레그램 웹훅 등록 / 해제 ─── */
+async function registerTelegramWebhook() {
+  const statusEl = $('#webhook-status');
+  statusEl.textContent = '⏳ 웹훅 등록 중...';
+  statusEl.style.color = '#64748b';
+  try {
+    // Worker URL에서 토큰을 알 수 없으므로 Worker를 통해 등록
+    const webhookUrl = encodeURIComponent(`${PROXY}/?action=telegramWebhook`);
+    // Telegram Bot API의 setWebhook은 봇 토큰이 필요 — Worker에 위임
+    const res = await fetch(`${PROXY}/?action=setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: `${PROXY}/?action=telegramWebhook` }),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      statusEl.textContent = '✅ 웹훅 등록 완료! 텔레그램 봇에 /start 를 보내보세요.';
+      statusEl.style.color = '#0f766e';
+    } else {
+      // Worker에 setWebhook 액션 없으면 직접 안내
+      statusEl.innerHTML =
+        '아래 URL을 브라우저에서 열어서 웹훅을 등록하세요 (한 번만 하면 돼요):<br/>' +
+        `<code class="text-xs break-all bg-slate-100 px-2 py-1 rounded block mt-1" id="webhook-url-display"></code>` +
+        `<button onclick="copyWebhookCmd()" class="mt-1 text-xs text-teal-600 underline">복사</button>`;
+      const tokenHint = '[YOUR_BOT_TOKEN]';
+      const webhookCmd = `https://api.telegram.org/bot${tokenHint}/setWebhook?url=${encodeURIComponent(PROXY + '/?action=telegramWebhook')}`;
+      const el = document.getElementById('webhook-url-display');
+      if (el) el.textContent = webhookCmd;
+      statusEl.style.color = '#334155';
+    }
+  } catch(e) {
+    // Worker에 setWebhook 없는 경우 — 직접 등록 방법 안내
+    const proxyEncoded = encodeURIComponent(PROXY + '/?action=telegramWebhook');
+    statusEl.innerHTML =
+      '텔레그램 BotFather에서 받은 봇 토큰을 아래 URL에 넣어 브라우저에서 열어주세요 (한 번만):<br/>' +
+      `<code class="text-xs break-all bg-slate-100 px-2 py-1 rounded block mt-1">https://api.telegram.org/bot<b>[봇토큰]</b>/setWebhook?url=${proxyEncoded}</code>`;
+    statusEl.style.color = '#334155';
+  }
+}
+async function deleteTelegramWebhook() {
+  const statusEl = $('#webhook-status');
+  statusEl.textContent = '⏳ 웹훅 해제 중...';
+  try {
+    const res  = await fetch(`${PROXY}/?action=deleteWebhook`, { method: 'POST' });
+    const json = await res.json();
+    statusEl.textContent = json.ok ? '✅ 웹훅 해제 완료' : '⚠️ Worker에 deleteWebhook 액션이 없습니다. Cloudflare 대시보드에서 직접 해제하세요.';
+    statusEl.style.color = '#64748b';
+  } catch(e) {
+    statusEl.textContent = '❌ ' + e.message;
+    statusEl.style.color = '#dc2626';
+  }
 }
 function changePin() {
   const v = ($('#setting-pin').value || '').trim();
