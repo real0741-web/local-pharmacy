@@ -2462,17 +2462,19 @@ async function _aiSummarizeDrug({ name, efcy, use, warn, ingr }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, efcy, use, warn, ingr }),
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(15000),
     });
     const result = await res.json();
+    // AI 실패 시 에러 throw (이전엔 성공처럼 보여서 원본 식약처 텍스트 그대로 남는 버그)
+    if (!res.ok || result.error) throw new Error(result.error || `AI 요약 실패 (${res.status})`);
     if (result.note) $('#prod-edit-note').value = result.note;
     if (result.info) $('#prod-edit-info').value = result.info;
-    status.textContent = `✅ ${name} — 복약지도 AI 정리 완료 👍`;
+    status.textContent = `✅ ${name} — 복약지도 AI 정리 완료 🤖`;
     status.style.color = '#0f766e';
   } catch(e) {
-    // 실패해도 괜찮 — 기존 파싱 결과 유지
-    status.textContent = `✅ ${name} — 가격·재고는 직접 입력하세요`;
-    status.style.color = '#0f766e';
+    // 실패 시 원본 식약처 데이터 유지 + 실패 표시
+    status.textContent = `✅ ${name} — 식약처 원문 데이터 (AI요약 실패: 복약지도 직접 수정 가능)`;
+    status.style.color = '#b45309';
     console.warn('AI 요약 실패:', e.message);
   }
 }
