@@ -137,12 +137,35 @@
 <main class="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-4 sm:gap-6">
   <aside class="hidden sm:block">
     <div class="card p-2 sticky top-[80px]">
+      <!-- 묶음 특가 버튼 (활성 묶음이 있을 때만 표시) -->
+      <div id="sidebar-bundle-btn" class="hidden mb-1">
+        <button onclick="showBundleView()" id="sidebar-bundle-tab"
+          class="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left transition-all font-semibold text-sm"
+          style="background: linear-gradient(135deg,#fef3c7,#fde68a); color:#92400e; border: 1.5px solid #fbbf24;">
+          <span class="text-xl">🎁</span>
+          <span>묶음 특가</span>
+          <span id="sidebar-bundle-count" class="ml-auto bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full"></span>
+        </button>
+      </div>
       <div id="sidebar-cats" class="flex flex-col"></div>
     </div>
   </aside>
 
   <section>
+    <!-- 묶음 특가 섹션 (키오스크) -->
+    <div id="bundle-view" class="hidden">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-2xl">🎁</span>
+        <div>
+          <h2 class="text-lg sm:text-xl font-bold">묶음 특가</h2>
+          <p class="text-sm text-slate-500">함께 구매하면 더 저렴해요!</p>
+        </div>
+      </div>
+      <div id="bundle-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8"></div>
+    </div>
+
     <!-- 고객용 검색창 -->
+    <div id="normal-product-view">
     <div class="relative mb-4">
       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">🔍</span>
       <input id="customer-search" type="search" placeholder="제품명으로 검색..."
@@ -160,6 +183,7 @@
     <div class="mt-8 mb-28 sm:mb-8 text-xs text-slate-400 text-center">
       ※ 본 화면은 정보 안내용입니다. 일반의약품은 약사 복약지도 후 약국 내에서 결제·수령됩니다.
     </div>
+    </div><!-- /normal-product-view -->
   </section>
 </main>
 
@@ -306,7 +330,8 @@
       </div>
 
       <!-- 현장결제 (항상 표시) -->
-      <button onclick="selectPayment('counter')"
+      <button onclick="chooseCounter()"
+              id="counter-select-btn"
               class="w-full flex items-center gap-3 p-3.5 rounded-xl border-2 border-teal-500 hover:bg-teal-50 transition-colors text-left">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0" style="background: var(--brand-soft);">🏪</div>
         <div class="flex-1">
@@ -318,6 +343,20 @@
     </div>
 
     <div id="payment-summary" class="p-3 rounded-xl bg-slate-50 text-xs text-slate-500 leading-relaxed"></div>
+
+    <!-- 현장결제 선택 시 확인 버튼 -->
+    <div id="counter-confirm-wrap" class="mt-3 hidden">
+      <button onclick="selectPayment('counter')"
+        class="w-full py-3.5 rounded-xl font-bold text-base text-white"
+        style="background: var(--brand);">
+        ✅ 주문 접수하기
+      </button>
+      <p class="text-xs text-center text-slate-400 mt-1.5">카운터에서 약사님께 번호를 보여주세요</p>
+    </div>
+    <button onclick="$('#payment-modal-overlay').classList.add('hidden')"
+      class="mt-2 w-full py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-500">
+      취소
+    </button>
   </div>
 </div>
 
@@ -413,6 +452,7 @@
     <!-- 탭 -->
     <div class="max-w-6xl mx-auto px-4 flex gap-1 border-t border-slate-100">
       <button class="admin-tab" data-tab="categories">분류 관리</button>
+      <button class="admin-tab" data-tab="bundles">묶음 할인</button>
       <button class="admin-tab" data-tab="products">제품 관리</button>
       <button class="admin-tab" data-tab="orders">주문 내역</button>
       <button class="admin-tab" data-tab="qr">QR 코드</button>
@@ -448,6 +488,18 @@
       <div id="admin-cat-list" class="space-y-2"></div>
     </section>
 
+    <!-- 묶음 할인 탭 -->
+    <section id="tab-bundles" class="admin-section hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-bold">묶음 할인</h2>
+          <p class="text-sm text-slate-500">여러 제품을 묶어서 특가로 판매합니다. 키오스크에 별도 섹션으로 표시됩니다.</p>
+        </div>
+        <button onclick="openBundleEditor()" class="btn-primary">+ 묶음 추가</button>
+      </div>
+      <div id="admin-bundle-list" class="space-y-3"></div>
+    </section>
+
     <!-- 제품 관리 탭 -->
     <section id="tab-products" class="admin-section hidden">
       <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
@@ -455,7 +507,10 @@
           <h2 class="text-xl font-bold">제품 관리</h2>
           <p class="text-sm text-slate-500">제품 카드에 표시될 내용을 편집합니다</p>
         </div>
-        <button onclick="openProductEditor()" class="btn-primary">+ 제품 추가</button>
+        <div class="flex gap-2">
+          <button onclick="toggleSortMode(true)" id="sort-mode-btn" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50">⠿ 순서 변경</button>
+          <button onclick="openProductEditor()" class="btn-primary">+ 제품 추가</button>
+        </div>
       </div>
       <!-- 엑셀 일괄 등록 -->
       <div class="flex gap-2 mb-3 flex-wrap">
@@ -467,7 +522,7 @@
           <input id="excel-import-file" type="file" accept=".xlsx,.xls" class="hidden" onchange="importFromExcel(event)" />
         </label>
       </div>
-      <div class="flex gap-2 mb-4 flex-wrap">
+      <div class="flex gap-2 mb-3 flex-wrap">
         <input id="prod-search" type="text" placeholder="🔍 제품명 검색"
                class="flex-1 min-w-[200px] px-3 py-2 border border-slate-200 rounded-lg text-sm"
                oninput="renderAdminProducts()" />
@@ -475,7 +530,12 @@
           <option value="">전체 카테고리</option>
         </select>
       </div>
-      <div id="admin-prod-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+      <!-- 순서 변경 안내 -->
+      <div id="sort-hint" class="hidden mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-700 flex items-center gap-2">
+        <span>⠿ 핸들을 드래그하거나 ▲▼ 버튼으로 순서를 변경하세요. 변경사항은 자동 저장됩니다.</span>
+        <button onclick="toggleSortMode(false)" class="ml-auto shrink-0 px-2 py-1 rounded-lg bg-amber-200 font-semibold">완료</button>
+      </div>
+      <div id="admin-prod-list" class="flex flex-col gap-2"></div>
     </section>
 
     <!-- 주문 내역 탭 -->
@@ -741,6 +801,68 @@
   </div>
 </div>
 
+<!-- 묶음 편집 모달 -->
+<div id="bundle-editor-overlay" class="hidden fixed inset-0 z-[80] bg-slate-900/50 fade flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[92vh] overflow-y-auto">
+    <div class="text-lg font-bold mb-4" id="bundle-editor-title">묶음 추가</div>
+    <input type="hidden" id="bundle-edit-id" />
+
+    <div class="grid grid-cols-[auto_1fr] gap-3 items-start mb-3">
+      <div class="field mb-0">
+        <label>이모지</label>
+        <div class="flex gap-2 items-center">
+          <input id="bundle-edit-emoji" type="text" maxlength="2" class="w-14 text-center text-2xl border border-slate-200 rounded-lg px-2 py-2" placeholder="🎁" />
+          <button type="button" onclick="openEmojiPicker('bundle-edit-emoji', this)" class="px-2 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm">😊</button>
+        </div>
+      </div>
+      <div class="field mb-0">
+        <label>묶음 이름</label>
+        <input id="bundle-edit-name" type="text" placeholder="예: 환절기 면역 패키지" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>설명 (선택)</label>
+      <input id="bundle-edit-desc" type="text" placeholder="예: 비타민C + 아연 + 홍삼 조합" />
+    </div>
+
+    <div class="field">
+      <label>구성 제품 선택 <span class="text-slate-400 text-xs font-normal">(2개 이상)</span></label>
+      <div id="bundle-product-checkboxes" class="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-1.5 bg-slate-50"></div>
+    </div>
+
+    <!-- 가격 계산 요약 -->
+    <div id="bundle-price-summary" class="hidden bg-teal-50 border border-teal-200 rounded-xl p-3 mb-3 text-sm">
+      <div class="flex justify-between text-slate-500 mb-1">
+        <span>개별 합산 가격</span>
+        <span id="bundle-sum-price">0원</span>
+      </div>
+      <div class="flex justify-between font-bold text-teal-700 text-base">
+        <span>묶음 특가</span>
+        <span id="bundle-final-display">0원</span>
+      </div>
+      <div id="bundle-save-display" class="text-right text-xs text-red-500 font-semibold mt-0.5"></div>
+    </div>
+
+    <div class="field">
+      <label>묶음 특가 (원)</label>
+      <input id="bundle-edit-price" type="number" min="0" step="100" placeholder="예: 35000" oninput="updateBundlePriceSummary()" />
+    </div>
+
+    <div class="field">
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input id="bundle-edit-active" type="checkbox" class="w-4 h-4 accent-teal-500" checked />
+        <span>활성 (키오스크에 노출)</span>
+      </label>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mt-2">
+      <button onclick="closeBundleEditor()" class="btn-secondary">취소</button>
+      <button onclick="saveBundle()" class="btn-primary">저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- 제품 편집 모달 -->
 <div id="prod-editor-overlay" class="hidden fixed inset-0 z-[80] bg-slate-900/50 fade flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
@@ -911,6 +1033,7 @@
    - localStorage에 저장된 게 없으면 이걸로 시작
    =========================================== */
 const DEFAULT_DATA = {
+  bundles: [],
   settings: {
     pharmacyName: '로컬 창고약국',
     tagline: '대기 중에 약사님이 큐레이션한 제품을 둘러보세요',
@@ -1019,7 +1142,8 @@ function migrate(d) {
   // 누락 필드 보정
   d.settings = Object.assign({}, DEFAULT_DATA.settings, d.settings || {});
   d.categories = d.categories || [];
-  d.products = d.products || [];
+  d.products   = d.products   || [];
+  d.bundles    = d.bundles    || [];
   return d;
 }
 function saveData() {
@@ -1095,6 +1219,7 @@ function renderCategories() {
 
 function selectCategory(id) {
   currentCat = id;
+  hideBundleView();
   renderCategories();
   renderProducts();
   window.scrollTo({ top: document.querySelector('main').offsetTop - 60, behavior: 'smooth' });
@@ -1164,12 +1289,12 @@ function renderProductCards(list, grid) {
       <div class="p-3">
         <div class="flex flex-wrap gap-1 mb-1.5">
           ${(p.badges||[]).map(b => `
-            <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+            <span class="text-xs px-2 py-0.5 rounded-full font-semibold"
                   style="background: var(--brand-soft); color: var(--brand);">${b}</span>
           `).join('')}
         </div>
         <div class="font-semibold text-sm leading-tight line-clamp-2 min-h-[2.5em]">${p.name}</div>
-        <div class="text-xs text-slate-500 mt-1 line-clamp-1">${p.tagline || ''}</div>
+        <div class="text-xs text-slate-500 mt-1 line-clamp-2">${p.tagline || ''}</div>
         <div class="mt-2 flex items-end gap-2">
           ${(p.priceHidden || !window._qrPriceVisible)
             ? `<div class="font-semibold text-sm px-3 py-1 rounded-full" style="background:var(--brand-soft);color:var(--brand);">💬 가격 문의</div>`
@@ -1180,14 +1305,16 @@ function renderProductCards(list, grid) {
         ${(!p.priceHidden && window._qrPriceVisible && discount > 0) ? `<div class="text-xs font-bold mt-0.5" style="color: var(--hot);">창고형 ${discount}% 절약</div>` : ''}
         ${(!p.stock || p.stock <= 0)
           ? `<button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold" style="background:#f1f5f9;color:#94a3b8;cursor:not-allowed;" disabled>품절</button>`
-          : `<div class="mt-3 flex items-center gap-1" onclick="event.stopPropagation()">
-               <button class="w-7 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',-1)">−</button>
-               <input id="cqty-${p.id}" type="number" min="1" max="99" value="1"
-                 class="w-10 h-8 text-center rounded-lg border border-slate-200 text-sm font-semibold"
-                 style="appearance:textfield;-moz-appearance:textfield;"
-                 onclick="event.stopPropagation()" />
-               <button class="w-7 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',1)">＋</button>
-               <button class="flex-1 h-8 rounded-lg text-sm font-semibold" style="background: var(--brand-soft); color: var(--brand);" onclick="event.stopPropagation(); addToCartQty('${p.id}')">🛒 담기</button>
+          : `<div class="mt-3 space-y-1.5" onclick="event.stopPropagation()">
+               <div class="flex items-center justify-center gap-1">
+                 <button class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',-1)">−</button>
+                 <input id="cqty-${p.id}" type="number" min="1" max="99" value="1"
+                   class="w-12 h-8 text-center rounded-lg border border-slate-200 text-sm font-semibold"
+                   style="appearance:textfield;-moz-appearance:textfield;"
+                   onclick="event.stopPropagation()" />
+                 <button class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',1)">＋</button>
+               </div>
+               <button class="w-full h-9 rounded-lg text-sm font-semibold" style="background: var(--brand-soft); color: var(--brand);" onclick="event.stopPropagation(); addToCartQty('${p.id}')">🛒 담기</button>
              </div>`
         }
       </div>
@@ -1328,6 +1455,11 @@ function startOrder() {
     if (wrap) wrap.classList.toggle('hidden', !pm[m]);
   });
 
+  // 확인 버튼 초기화 (매번 열 때 숨김)
+  $('#counter-confirm-wrap').classList.add('hidden');
+  const cBtn = $('#counter-select-btn');
+  if (cBtn) cBtn.style.background = '';
+
   $('#payment-modal-overlay').classList.remove('hidden');
 }
 
@@ -1446,6 +1578,14 @@ async function sendTelegramAlert(order) {
 }
 
 /* ─── 결제 선택 & 주문 완료 ─── */
+function chooseCounter() {
+  // 현장결제 버튼을 선택 상태로 변경 + 확인 버튼 표시
+  const btn = $('#counter-select-btn');
+  if (btn) btn.style.background = 'var(--brand-soft)';
+  $('#counter-confirm-wrap').classList.remove('hidden');
+  $('#counter-confirm-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 async function selectPayment(method) {
   if (method !== 'counter') {
     showToast('해당 결제수단은 곧 연동될 예정이에요 🔧');
@@ -1613,6 +1753,7 @@ function updateOrderStatus(orderId, status) {
 function openDetail(id) {
   const p = data.products.find(pp => pp.id === id);
   if (!p) return;
+  history.pushState({ modal: 'detail' }, '');
   const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
   // 이미지 + 텍스트 모두 스크롤 영역 안에
   $('#detail-content').innerHTML = `
@@ -1623,8 +1764,8 @@ function openDetail(id) {
       : `<div style="aspect-ratio:4/3;background:linear-gradient(135deg,#f1f5f9,#e2e8f0);display:flex;align-items:center;justify-content:center;font-size:5rem;">${p.emoji || '📦'}</div>`
     }
     <div class="p-5">
-      <div class="flex flex-wrap gap-1 mb-2">
-        ${(p.badges||[]).map(b => `<span class="text-xs px-2 py-1 rounded-full font-semibold" style="background: var(--brand-soft); color: var(--brand);">${b}</span>`).join('')}
+      <div class="flex flex-wrap gap-1.5 mb-2">
+        ${(p.badges||[]).map(b => `<span class="text-sm px-3 py-1 rounded-full font-semibold" style="background: var(--brand-soft); color: var(--brand);">${b}</span>`).join('')}
       </div>
       <h3 class="text-xl font-bold leading-snug">${p.name}</h3>
       <p class="text-sm text-slate-500 mt-1">${p.tagline || ''}</p>
@@ -1638,13 +1779,13 @@ function openDetail(id) {
       ${(!p.priceHidden && window._qrPriceVisible && discount > 0) ? `<div class="text-sm font-bold mt-1" style="color: var(--hot);">🔥 창고형 ${discount}% 절약 (${fmt(p.list - p.price)} 이득)</div>` : ''}
       ${p.pharmacistNote ? `
         <div class="mt-5 p-4 rounded-xl" style="background: var(--brand-soft);">
-          <div class="text-xs font-bold mb-1" style="color: var(--brand);">💬 약사님 한 마디</div>
-          <div class="text-sm leading-relaxed">${p.pharmacistNote}</div>
+          <div class="text-sm font-bold mb-1.5" style="color: var(--brand);">💬 약사님 한 마디</div>
+          <div class="text-base leading-relaxed">${p.pharmacistNote}</div>
         </div>` : ''}
       ${p.info ? `
-        <div class="mt-5 text-sm">
-          <div class="font-semibold mb-1.5">📋 제품 정보</div>
-          <div class="text-slate-600 leading-relaxed">${p.info}</div>
+        <div class="mt-5">
+          <div class="text-sm font-semibold mb-1.5">📋 제품 정보</div>
+          <div class="text-base text-slate-600 leading-relaxed">${p.info}</div>
         </div>` : ''}
       ${(!p.stock || p.stock <= 0) ? `
       <div class="mt-4">
@@ -1676,10 +1817,11 @@ function openDetail(id) {
   $('#detail-overlay').classList.remove('hidden');
   $('#detail-modal').classList.remove('hidden');
 }
-function closeDetail() {
+function closeDetail(_skipHistory) {
   $('#detail-overlay').classList.add('hidden');
   $('#detail-modal').classList.add('hidden');
   $('#detail-content').innerHTML = '';
+  if (!_skipHistory && history.state?.modal === 'detail') history.back();
 }
 
 /* ===========================================
@@ -1737,6 +1879,7 @@ function exitAdmin() {
   applyHeader();
   renderCategories();
   renderProducts();
+  renderSidebarBundleBtn();
   updateCartUI();
   if (location.hash === '#admin') history.replaceState(null, '', location.pathname);
 }
@@ -1749,6 +1892,7 @@ function switchAdminTab(tab) {
   $('#tab-' + tab).classList.remove('hidden');
 
   if (tab === 'categories') renderAdminCats();
+  if (tab === 'bundles')    renderAdminBundles();
   if (tab === 'products')   { populateProdFilter(); renderAdminProducts(); }
   if (tab === 'orders')     { renderAdminOrders(); }
   if (tab === 'qr')         { setQRDefault(); }
@@ -1835,10 +1979,28 @@ function populateProdFilter() {
     data.categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   sel.value = cur;
 }
+let _sortMode = false;
+let _dragSrcId = null;
+
+function toggleSortMode(on) {
+  _sortMode = on;
+  $('#sort-hint')?.classList.toggle('hidden', !on);
+  $('#sort-mode-btn')?.classList.toggle('hidden', on);
+  renderAdminProducts();
+}
+
 function renderAdminProducts() {
   const wrap   = $('#admin-prod-list');
   const search = ($('#prod-search').value || '').trim().toLowerCase();
   const filter = $('#prod-filter').value;
+
+  // 순서 변경 모드: 검색/필터 비활성화 안내
+  const isFiltered = !!(search || filter);
+  if (_sortMode && isFiltered) {
+    wrap.innerHTML = `<div class="card p-4 text-center text-amber-600 text-sm">순서 변경 중에는 검색/필터를 해제해주세요.</div>`;
+    return;
+  }
+
   let list = data.products.slice();
   if (filter) list = list.filter(p => p.cat === filter);
   if (search) list = list.filter(p =>
@@ -1847,32 +2009,169 @@ function renderAdminProducts() {
   );
   wrap.innerHTML = '';
   if (list.length === 0) {
-    wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm col-span-full">제품이 없습니다.</div>`;
+    wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm">제품이 없습니다.</div>`;
     return;
   }
-  list.forEach(p => {
-    const cat = data.categories.find(c => c.id === p.cat);
+
+  // 전체 인덱스 (재정렬용)
+  const allIds = data.products.map(p => p.id);
+
+  list.forEach((p, listIdx) => {
+    const cat   = data.categories.find(c => c.id === p.cat);
     const thumb = p.image
-      ? `<img src="${p.image}" class="w-14 h-14 rounded-lg object-cover shrink-0" />`
-      : `<div class="img-ph w-14 h-14 rounded-lg shrink-0 text-2xl">${p.emoji||'📦'}</div>`;
+      ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
+      : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
+
+    const realIdx = allIds.indexOf(p.id);
+    const upDisabled   = realIdx <= 0 ? 'disabled' : '';
+    const downDisabled = realIdx >= allIds.length - 1 ? 'disabled' : '';
+
     const row = document.createElement('div');
-    row.className = 'card p-3 flex items-center gap-3';
+    row.className = 'card p-3 flex items-center gap-2 transition-all';
+    row.dataset.id = p.id;
+    if (_sortMode) {
+      row.draggable = true;
+      row.style.cursor = 'grab';
+      row.addEventListener('dragstart', onDragStart);
+      row.addEventListener('dragover',  onDragOver);
+      row.addEventListener('dragleave', onDragLeave);
+      row.addEventListener('drop',      onDrop);
+      row.addEventListener('dragend',   onDragEnd);
+      // 터치 지원
+      row.addEventListener('touchstart', onTouchStart, { passive: true });
+      row.addEventListener('touchmove',  onTouchMove,  { passive: false });
+      row.addEventListener('touchend',   onTouchEnd);
+    }
+
     row.innerHTML = `
+      ${_sortMode ? `<div class="shrink-0 flex flex-col items-center px-1 cursor-grab touch-none select-none">
+        <span class="text-slate-300 text-xl leading-none">⠿</span>
+      </div>` : ''}
       ${thumb}
       <div class="flex-1 min-w-0">
         <div class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</div>
-        <div class="font-semibold leading-tight line-clamp-1">${p.name}</div>
-        <div class="text-xs text-slate-500 line-clamp-1 mt-0.5">${p.tagline||''}</div>
-        <div class="text-sm font-bold mt-1">${fmt(p.price)}
-          ${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}
-        </div>
+        <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}</div>
+        <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
       </div>
-      <div class="flex flex-col gap-1.5 shrink-0">
-        <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-        <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
+      <div class="flex gap-1.5 shrink-0 items-center">
+        ${_sortMode ? `
+          <div class="flex flex-col gap-0.5">
+            <button onclick="moveProduct('${p.id}',-1)" ${upDisabled}
+              class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
+            <button onclick="moveProduct('${p.id}',1)" ${downDisabled}
+              class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
+          </div>` : `
+          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>`}
       </div>`;
     wrap.appendChild(row);
   });
+}
+
+/* ── ▲▼ 버튼 이동 ── */
+function moveProduct(id, dir) {
+  const idx = data.products.findIndex(p => p.id === id);
+  if (idx < 0) return;
+  const to = idx + dir;
+  if (to < 0 || to >= data.products.length) return;
+  const tmp = data.products[idx];
+  data.products[idx] = data.products[to];
+  data.products[to] = tmp;
+  saveData();
+  renderAdminProducts();
+}
+
+/* ── 드래그 앤 드롭 ── */
+function onDragStart(e) {
+  _dragSrcId = this.dataset.id;
+  this.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  this.style.background = '#f0fdf4';
+  this.style.outline = '2px dashed #14b8a6';
+}
+function onDragLeave() {
+  this.style.background = '';
+  this.style.outline = '';
+}
+function onDrop(e) {
+  e.stopPropagation();
+  this.style.background = '';
+  this.style.outline = '';
+  const srcId  = _dragSrcId;
+  const destId = this.dataset.id;
+  if (!srcId || srcId === destId) return;
+  const srcIdx  = data.products.findIndex(p => p.id === srcId);
+  const destIdx = data.products.findIndex(p => p.id === destId);
+  if (srcIdx < 0 || destIdx < 0) return;
+  const [moved] = data.products.splice(srcIdx, 1);
+  data.products.splice(destIdx, 0, moved);
+  saveData();
+  renderAdminProducts();
+}
+function onDragEnd() {
+  this.style.opacity = '';
+  // 혹시 남은 강조 제거
+  document.querySelectorAll('#admin-prod-list .card').forEach(r => {
+    r.style.background = '';
+    r.style.outline = '';
+  });
+}
+
+/* ── 터치 드래그 ── */
+let _touchDragEl = null, _touchClone = null, _touchStartY = 0;
+function onTouchStart(e) {
+  _touchDragEl = this;
+  _touchStartY = e.touches[0].clientY;
+  _dragSrcId = this.dataset.id;
+  this.style.opacity = '0.5';
+  // 이동용 클론 생성
+  _touchClone = this.cloneNode(true);
+  _touchClone.style.cssText = `position:fixed;z-index:9999;width:${this.offsetWidth}px;opacity:0.85;pointer-events:none;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.18);`;
+  const rect = this.getBoundingClientRect();
+  _touchClone.style.top  = rect.top  + 'px';
+  _touchClone.style.left = rect.left + 'px';
+  document.body.appendChild(_touchClone);
+}
+function onTouchMove(e) {
+  e.preventDefault();
+  if (!_touchClone) return;
+  const touch = e.touches[0];
+  const rect = _touchDragEl.getBoundingClientRect();
+  _touchClone.style.top = (touch.clientY - 30) + 'px';
+
+  // 겹치는 행 찾기
+  document.querySelectorAll('#admin-prod-list .card').forEach(row => {
+    row.style.background = '';
+    row.style.outline = '';
+    if (row === _touchDragEl) return;
+    const r = row.getBoundingClientRect();
+    if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
+      row.style.background = '#f0fdf4';
+      row.style.outline = '2px dashed #14b8a6';
+    }
+  });
+}
+function onTouchEnd(e) {
+  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
+  if (_touchDragEl) _touchDragEl.style.opacity = '';
+  const touch = e.changedTouches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-id]');
+  if (target && target.dataset.id && target.dataset.id !== _dragSrcId) {
+    const srcIdx  = data.products.findIndex(p => p.id === _dragSrcId);
+    const destIdx = data.products.findIndex(p => p.id === target.dataset.id);
+    if (srcIdx >= 0 && destIdx >= 0) {
+      const [moved] = data.products.splice(srcIdx, 1);
+      data.products.splice(destIdx, 0, moved);
+      saveData();
+    }
+  }
+  document.querySelectorAll('#admin-prod-list .card').forEach(r => { r.style.background=''; r.style.outline=''; });
+  renderAdminProducts();
+  _touchDragEl = null; _dragSrcId = null;
 }
 function deleteProduct(id) {
   const p = data.products.find(p => p.id === id);
@@ -3042,12 +3341,29 @@ async function tryLoadRemoteData() {
     applyHeader();
     renderCategories();
     renderProducts();
+    renderSidebarBundleBtn();
     return true;
   } catch(e) { return false; }
 }
 
 /* ─── 초기화 ─── */
 $('#cart-fab').addEventListener('click', () => toggleCart(true));
+
+// 뒤로가기 버튼 → 열린 모달 닫기
+window.addEventListener('popstate', (e) => {
+  if (!$('#detail-modal').classList.contains('hidden')) {
+    closeDetail(true); // _skipHistory=true: history.back() 재호출 방지
+    return;
+  }
+  if (!$('#payment-modal-overlay').classList.contains('hidden')) {
+    $('#payment-modal-overlay').classList.add('hidden');
+    return;
+  }
+  if (!$('#cart-panel').classList.contains('hidden')) {
+    toggleCart(false);
+    return;
+  }
+});
 
 // 관리자 URL(?mode=admin)이면 QR 타이머 우회 + 세션 복원 or 로그인 창 열기
 if (_adminUrlMode) {
@@ -3069,9 +3385,10 @@ if (_adminUrlMode) {
 applyHeader();
 renderCategories();
 renderProducts();
+renderSidebarBundleBtn();
 updateCartUI();
-applyDeliverySetting(); // 택배 수령 허용 여부 반영
-tryLoadRemoteData(); // 백그라운드에서 Cloudflare KV 최신 데이터 로드
+applyDeliverySetting();
+tryLoadRemoteData();
 
 /* ═══════════════════════════════════════════════
    🤖 AI 제품 분석 (Claude API ← Cloudflare Worker)
@@ -3099,13 +3416,16 @@ async function analyzeProductWithAI() {
   try {
     let base64 = null, mediaType = 'image/jpeg';
 
+    // 현재 분류 목록 (AI가 적절한 분류 선택에 활용)
+    const catList = (data.categories || []).map(c => ({ id: c.id, name: c.name }));
+
     // ① 폼에 제품명이 있으면 사진 분석 없이 바로 DB 검색
     if (existName) {
       statusEl.textContent = `🔍 "${existName}" 식약처 DB 검색 중...`;
       const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productName: existName })
+        body: JSON.stringify({ productName: existName, categories: catList })
       });
       const result = await resp.json();
       if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
@@ -3115,8 +3435,14 @@ async function analyzeProductWithAI() {
       const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
       setField('prod-edit-tagline', result.tagline);
       setField('prod-edit-note',    result.pharmacistNote);
-      if (result.suggestedEmoji)  { $('#prod-edit-emoji').value  = result.suggestedEmoji;  filled++; }
-      if (result.suggestedBadges?.length) { $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      setField('prod-edit-info',    result.info);
+      if (result.suggestedEmoji)         { $('#prod-edit-emoji').value  = result.suggestedEmoji;  filled++; }
+      if (result.suggestedBadges?.length){ $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      if (result.suggestedCategoryId) {
+        const catSel = $('#prod-edit-cat');
+        const opt = [...catSel.options].find(o => o.value === result.suggestedCategoryId);
+        if (opt) { catSel.value = result.suggestedCategoryId; filled++; }
+      }
       const srcStr = result._source ? ` [${result._source}]` : '';
       statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
       statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${srcStr}`;
@@ -3138,7 +3464,7 @@ async function analyzeProductWithAI() {
       const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageData: base64, mediaType })
+        body: JSON.stringify({ imageData: base64, mediaType, categories: catList })
       });
       const result = await resp.json();
       if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
@@ -3149,8 +3475,14 @@ async function analyzeProductWithAI() {
       setField('prod-edit-name',    result.name);
       setField('prod-edit-tagline', result.tagline);
       setField('prod-edit-note',    result.pharmacistNote);
-      if (result.suggestedEmoji)        { $('#prod-edit-emoji').value  = result.suggestedEmoji; updateImgPreview?.(); filled++; }
-      if (result.suggestedBadges?.length) { $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      setField('prod-edit-info',    result.info);
+      if (result.suggestedEmoji)         { $('#prod-edit-emoji').value  = result.suggestedEmoji; updateImgPreview?.(); filled++; }
+      if (result.suggestedBadges?.length){ $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
+      if (result.suggestedCategoryId) {
+        const catSel = $('#prod-edit-cat');
+        const opt = [...catSel.options].find(o => o.value === result.suggestedCategoryId);
+        if (opt) { catSel.value = result.suggestedCategoryId; filled++; }
+      }
       const nameStr2 = result.name ? `\n📦 ${result.name}` : '';
       const srcStr2  = result._source ? ` [${result._source}]` : '';
       statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
@@ -3368,6 +3700,215 @@ function openEmojiPicker(targetId, triggerBtn) {
       }
     });
   }, 0);
+}
+
+/* ─── 묶음 할인 관리 ─── */
+function renderAdminBundles() {
+  const list = $('#admin-bundle-list');
+  if (!list) return;
+  if (!data.bundles?.length) {
+    list.innerHTML = `<div class="text-slate-400 text-sm text-center py-8">등록된 묶음이 없습니다. 위 "+ 묶음 추가" 버튼을 눌러 만들어보세요.</div>`;
+    return;
+  }
+  list.innerHTML = data.bundles.map(b => {
+    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
+    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+    const save = sumPrice - (b.bundlePrice || 0);
+    return `
+    <div class="card p-4 flex items-start gap-3 ${b.active ? '' : 'opacity-50'}">
+      <div class="text-3xl w-12 text-center shrink-0">${b.emoji || '🎁'}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-base">${b.name}</span>
+          ${b.active ? '<span class="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">노출중</span>' : '<span class="text-xs bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">숨김</span>'}
+        </div>
+        ${b.desc ? `<div class="text-sm text-slate-500 mt-0.5">${b.desc}</div>` : ''}
+        <div class="text-sm text-slate-600 mt-1.5 flex flex-wrap gap-1">
+          ${prods.map(p => `<span class="bg-slate-100 rounded-lg px-2 py-0.5">${p.emoji||'💊'} ${p.name}</span>`).join('')}
+        </div>
+        <div class="mt-2 flex items-baseline gap-3">
+          <span class="text-lg font-bold text-teal-700">${(b.bundlePrice||0).toLocaleString()}원</span>
+          <span class="text-sm text-slate-400 line-through">${sumPrice.toLocaleString()}원</span>
+          ${save > 0 ? `<span class="text-xs font-bold text-red-500">-${save.toLocaleString()}원 절약!</span>` : ''}
+        </div>
+      </div>
+      <div class="flex flex-col gap-1.5 shrink-0">
+        <button onclick="openBundleEditor('${b.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold">수정</button>
+        <button onclick="deleteBundle('${b.id}')" class="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-semibold">삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openBundleEditor(id) {
+  const editing = id ? data.bundles?.find(b => b.id === id) : null;
+  $('#bundle-editor-title').textContent = editing ? '묶음 수정' : '묶음 추가';
+  $('#bundle-edit-id').value       = id || '';
+  $('#bundle-edit-emoji').value    = editing?.emoji    || '🎁';
+  $('#bundle-edit-name').value     = editing?.name     || '';
+  $('#bundle-edit-desc').value     = editing?.desc     || '';
+  $('#bundle-edit-price').value    = editing?.bundlePrice || '';
+  $('#bundle-edit-active').checked = editing ? !!editing.active : true;
+
+  // 제품 체크박스 렌더링
+  const box = $('#bundle-product-checkboxes');
+  const checkedIds = new Set(editing?.productIds || []);
+  box.innerHTML = data.products.map(p =>
+    `<label class="flex items-center gap-2 cursor-pointer hover:bg-white rounded-lg px-2 py-1 transition-colors">
+      <input type="checkbox" class="bundle-prod-check w-4 h-4 accent-teal-500" value="${p.id}" ${checkedIds.has(p.id) ? 'checked' : ''} onchange="updateBundlePriceSummary()" />
+      <span class="text-lg">${p.emoji||'💊'}</span>
+      <span class="text-sm flex-1">${p.name}</span>
+      <span class="text-sm font-semibold text-teal-700 shrink-0">${(p.price||0).toLocaleString()}원</span>
+    </label>`
+  ).join('');
+
+  updateBundlePriceSummary();
+  $('#bundle-editor-overlay').classList.remove('hidden');
+}
+
+function closeBundleEditor() { $('#bundle-editor-overlay').classList.add('hidden'); }
+
+function updateBundlePriceSummary() {
+  const checked = [...document.querySelectorAll('.bundle-prod-check:checked')];
+  const sumPrice = checked.reduce((s, cb) => {
+    const p = data.products.find(x => x.id === cb.value);
+    return s + (p?.price || 0);
+  }, 0);
+  const bundlePrice = parseInt($('#bundle-edit-price')?.value || 0) || 0;
+  const save = sumPrice - bundlePrice;
+  const summary = $('#bundle-price-summary');
+  if (summary) {
+    summary.classList.toggle('hidden', checked.length === 0);
+    $('#bundle-sum-price').textContent     = sumPrice.toLocaleString() + '원';
+    $('#bundle-final-display').textContent = bundlePrice ? bundlePrice.toLocaleString() + '원' : '—';
+    const saveEl = $('#bundle-save-display');
+    saveEl.textContent = (save > 0 && bundlePrice) ? `${save.toLocaleString()}원 절약 (${Math.round(save/sumPrice*100)}% 할인)` : '';
+  }
+}
+
+function saveBundle() {
+  const id      = $('#bundle-edit-id').value.trim();
+  const emoji   = $('#bundle-edit-emoji').value.trim() || '🎁';
+  const name    = $('#bundle-edit-name').value.trim();
+  const desc    = $('#bundle-edit-desc').value.trim();
+  const price   = parseInt($('#bundle-edit-price').value) || 0;
+  const active  = !!$('#bundle-edit-active').checked;
+  const prodIds = [...document.querySelectorAll('.bundle-prod-check:checked')].map(cb => cb.value);
+
+  if (!name)           { showToast('묶음 이름을 입력하세요'); return; }
+  if (prodIds.length < 2) { showToast('구성 제품을 2개 이상 선택하세요'); return; }
+  if (!price)          { showToast('묶음 특가를 입력하세요'); return; }
+
+  if (!data.bundles) data.bundles = [];
+  if (id) {
+    const idx = data.bundles.findIndex(b => b.id === id);
+    if (idx >= 0) data.bundles[idx] = { id, emoji, name, desc, productIds: prodIds, bundlePrice: price, active };
+  } else {
+    data.bundles.push({ id: 'bundle_' + Date.now(), emoji, name, desc, productIds: prodIds, bundlePrice: price, active });
+  }
+  saveData();
+  closeBundleEditor();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('묶음 저장 완료!');
+}
+
+function deleteBundle(id) {
+  if (!confirm('이 묶음을 삭제할까요?')) return;
+  data.bundles = (data.bundles || []).filter(b => b.id !== id);
+  saveData();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('묶음 삭제됨');
+}
+
+/* ─── 키오스크 묶음 뷰 ─── */
+function renderSidebarBundleBtn() {
+  const activeBundles = (data.bundles || []).filter(b => b.active);
+  const btn = $('#sidebar-bundle-btn');
+  const cnt = $('#sidebar-bundle-count');
+  if (btn) btn.classList.toggle('hidden', activeBundles.length === 0);
+  if (cnt) cnt.textContent = activeBundles.length || '';
+}
+
+function showBundleView() {
+  $('#bundle-view').classList.remove('hidden');
+  $('#normal-product-view').classList.add('hidden');
+  // 사이드바 활성 표시
+  document.querySelectorAll('#sidebar-cats button').forEach(b => b.classList.remove('active'));
+  $('#sidebar-bundle-tab')?.classList.add('active');
+  renderBundleCards();
+}
+
+function hideBundleView() {
+  $('#bundle-view').classList.add('hidden');
+  $('#normal-product-view').classList.remove('hidden');
+}
+
+function renderBundleCards() {
+  const cards = $('#bundle-cards');
+  if (!cards) return;
+  const activeBundles = (data.bundles || []).filter(b => b.active);
+  if (!activeBundles.length) { cards.innerHTML = '<div class="text-slate-400 text-center py-12">현재 진행 중인 묶음 특가가 없습니다.</div>'; return; }
+
+  cards.innerHTML = activeBundles.map(b => {
+    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
+    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+    const save = sumPrice - (b.bundlePrice || 0);
+    const savePct = sumPrice > 0 ? Math.round(save / sumPrice * 100) : 0;
+    return `
+    <div class="card p-5 border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+      <div class="flex items-start gap-3 mb-3">
+        <div class="text-4xl">${b.emoji || '🎁'}</div>
+        <div>
+          <div class="font-bold text-lg leading-tight">${b.name}</div>
+          ${b.desc ? `<div class="text-sm text-slate-500 mt-0.5">${b.desc}</div>` : ''}
+          ${savePct > 0 ? `<div class="mt-1 inline-block bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">-${savePct}% 할인</div>` : ''}
+        </div>
+      </div>
+      <div class="space-y-1.5 mb-4">
+        ${prods.map(p => `
+          <div class="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
+            <span class="text-lg">${p.emoji||'💊'}</span>
+            <span class="flex-1 text-sm font-medium">${p.name}</span>
+            <span class="text-sm text-slate-500">${(p.price||0).toLocaleString()}원</span>
+          </div>`).join('')}
+      </div>
+      <div class="flex items-end justify-between mt-3 pt-3 border-t border-amber-200">
+        <div>
+          <div class="text-sm text-slate-400 line-through">${sumPrice.toLocaleString()}원</div>
+          <div class="text-2xl font-black text-teal-700">${(b.bundlePrice||0).toLocaleString()}원</div>
+          ${save > 0 ? `<div class="text-xs font-bold text-red-500">${save.toLocaleString()}원 절약!</div>` : ''}
+        </div>
+        <button onclick="addBundleToCart('${b.id}')" class="btn-primary px-5 py-3 text-base">
+          🛒 묶음 담기
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addBundleToCart(bundleId) {
+  const bundle = (data.bundles || []).find(b => b.id === bundleId);
+  if (!bundle) return;
+  const prods = (bundle.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
+  if (!prods.length) { showToast('구성 제품을 찾을 수 없습니다'); return; }
+  prods.forEach(p => {
+    const item = cart.find(c => c.id === p.id);
+    if (item) item.qty += 1;
+    else cart.push({ id: p.id, qty: 1 });
+  });
+  // 묶음 할인 금액을 별도 메모로 저장 (주문서에 표시)
+  const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+  const discount = sumPrice - bundle.bundlePrice;
+  if (discount > 0) {
+    if (!cart._bundleDiscounts) cart._bundleDiscounts = [];
+    // 배열에 직접 붙이면 forEach 등에서 무시됨 — 별도 전역 변수 활용
+    if (!window._bundleDiscounts) window._bundleDiscounts = [];
+    window._bundleDiscounts.push({ name: bundle.name, discount });
+  }
+  renderCartBar();
+  showToast(`🎁 ${bundle.name} 묶음이 담겼어요! (${prods.length}개 제품)`);
 }
 
 function updateCatEmojiPreview() {
