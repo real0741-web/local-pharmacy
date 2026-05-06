@@ -1923,6 +1923,7 @@ function renderAdminCats() {
     const selected = _selectedCatId === c.id;
     const row = document.createElement('div');
     row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+    row.dataset.catid = c.id;
     if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
     row.onclick = (e) => {
       if (e.target.closest('button')) return;
@@ -1982,6 +1983,10 @@ function moveCatSelected(dir) {
   [data.categories[i], data.categories[j]] = [data.categories[j], data.categories[i]];
   saveData();
   renderAdminCats();
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`[data-catid="${_selectedCatId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
 }
 function moveCat(id, dir) {
   const i = data.categories.findIndex(c => c.id === id);
@@ -2065,6 +2070,7 @@ function renderAdminProducts() {
 
     const row = document.createElement('div');
     row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+    row.dataset.prodid = p.id;
     if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
     row.onclick = (e) => {
       if (e.target.closest('button')) return;
@@ -2143,6 +2149,10 @@ function moveProduct(id, dir) {
   }
   saveData();
   renderAdminProducts();
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`[data-prodid="${_selectedProdId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
 }
 function deleteProduct(id) {
   const p = data.products.find(p => p.id === id);
