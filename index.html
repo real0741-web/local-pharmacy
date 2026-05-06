@@ -485,6 +485,13 @@
         </div>
         <button onclick="openCatEditor()" class="btn-primary">+ 분류 추가</button>
       </div>
+      <!-- 분류 순서 고정 컨트롤 -->
+      <div id="cat-order-bar" class="hidden mb-2 flex items-center gap-2 p-2 rounded-xl bg-teal-50 border border-teal-200">
+        <span id="cat-selected-label" class="flex-1 text-sm font-semibold text-teal-800 truncate"></span>
+        <button onclick="moveCatSelected(-1)" class="w-9 h-9 rounded-lg bg-white border border-teal-300 text-teal-700 font-bold text-lg hover:bg-teal-100">↑</button>
+        <button onclick="moveCatSelected(1)"  class="w-9 h-9 rounded-lg bg-white border border-teal-300 text-teal-700 font-bold text-lg hover:bg-teal-100">↓</button>
+        <button onclick="clearCatSelection()" class="w-9 h-9 rounded-lg bg-white border border-slate-200 text-slate-500 text-sm">✕</button>
+      </div>
       <div id="admin-cat-list" class="space-y-2"></div>
     </section>
 
@@ -527,7 +534,14 @@
           <option value="">전체 카테고리</option>
         </select>
       </div>
-      <div class="mb-2 text-xs text-slate-400">↑↓ 버튼으로 순서 변경 · 분류 필터 선택 시 해당 분류 안에서만 이동</div>
+      <!-- 제품 순서 고정 컨트롤 -->
+      <div id="prod-order-bar" class="hidden mb-2 flex items-center gap-2 p-2 rounded-xl bg-teal-50 border border-teal-200">
+        <span id="prod-selected-label" class="flex-1 text-sm font-semibold text-teal-800 truncate"></span>
+        <button onclick="moveProdSelected(-1)" class="w-9 h-9 rounded-lg bg-white border border-teal-300 text-teal-700 font-bold text-lg hover:bg-teal-100">↑</button>
+        <button onclick="moveProdSelected(1)"  class="w-9 h-9 rounded-lg bg-white border border-teal-300 text-teal-700 font-bold text-lg hover:bg-teal-100">↓</button>
+        <button onclick="clearProdSelection()" class="w-9 h-9 rounded-lg bg-white border border-slate-200 text-slate-500 text-sm">✕</button>
+      </div>
+      <div class="mb-1 text-xs text-slate-400">행을 클릭해 선택하면 상단 ↑↓ 버튼으로 이동합니다 · 분류 필터 시 해당 분류 안에서만 이동</div>
       <div id="admin-prod-list" class="flex flex-col gap-2"></div>
     </section>
 
@@ -1892,17 +1906,25 @@ function switchAdminTab(tab) {
 }
 
 /* ─── 분류 관리 ─── */
+let _selectedCatId = null;
+
 function renderAdminCats() {
   const wrap = $('#admin-cat-list');
   wrap.innerHTML = '';
   if (data.categories.length === 0) {
     wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm">분류가 없습니다. + 분류 추가 버튼을 눌러 시작하세요.</div>`;
-    return;
+    clearCatSelection(); return;
   }
   data.categories.forEach((c, i) => {
     const count = data.products.filter(p => p.cat === c.id).length;
+    const selected = _selectedCatId === c.id;
     const row = document.createElement('div');
-    row.className = 'card p-3 flex items-center gap-3';
+    row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+    if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
+    row.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      selectCat(c.id, c.name);
+    };
     row.innerHTML = `
       <div class="text-2xl w-10 text-center">${c.emoji || '📂'}</div>
       <div class="flex-1 min-w-0">
@@ -1910,14 +1932,49 @@ function renderAdminCats() {
         <div class="text-xs text-slate-500 truncate">${c.desc || ''}</div>
       </div>
       <div class="flex items-center gap-1 shrink-0">
-        <button title="위로" onclick="moveCat('${c.id}', -1)" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600" ${i===0?'disabled style="opacity:.3"':''}>↑</button>
-        <button title="아래로" onclick="moveCat('${c.id}', 1)" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600" ${i===data.categories.length-1?'disabled style="opacity:.3"':''}>↓</button>
         <button onclick="openCatEditor('${c.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
         <button onclick="deleteCat('${c.id}')" class="btn-danger text-sm">삭제</button>
       </div>
     `;
     wrap.appendChild(row);
   });
+  _updateCatOrderBar();
+}
+
+function selectCat(id, name) {
+  _selectedCatId = (_selectedCatId === id) ? null : id;
+  if (_selectedCatId) {
+    const label = $('#cat-selected-label');
+    if (label) label.textContent = name + ' 선택됨';
+  }
+  renderAdminCats();
+}
+function clearCatSelection() {
+  _selectedCatId = null;
+  renderAdminCats();
+}
+function _updateCatOrderBar() {
+  const bar = $('#cat-order-bar');
+  if (!bar) return;
+  if (_selectedCatId) {
+    bar.classList.remove('hidden');
+    const idx = data.categories.findIndex(c => c.id === _selectedCatId);
+    bar.querySelectorAll('button')[0].disabled = idx <= 0;
+    bar.querySelectorAll('button')[1].disabled = idx >= data.categories.length - 1;
+    bar.querySelectorAll('button')[0].style.opacity = idx <= 0 ? '0.3' : '';
+    bar.querySelectorAll('button')[1].style.opacity = idx >= data.categories.length - 1 ? '0.3' : '';
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+function moveCatSelected(dir) {
+  if (!_selectedCatId) return;
+  const i = data.categories.findIndex(c => c.id === _selectedCatId);
+  const j = i + dir;
+  if (j < 0 || j >= data.categories.length) return;
+  [data.categories[i], data.categories[j]] = [data.categories[j], data.categories[i]];
+  saveData();
+  renderAdminCats();
 }
 function moveCat(id, dir) {
   const i = data.categories.findIndex(c => c.id === id);
@@ -1971,6 +2028,8 @@ function populateProdFilter() {
     data.categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   sel.value = cur;
 }
+let _selectedProdId = null;
+
 function renderAdminProducts() {
   const wrap   = $('#admin-prod-list');
   const search = ($('#prod-search').value || '').trim().toLowerCase();
@@ -1985,23 +2044,25 @@ function renderAdminProducts() {
   wrap.innerHTML = '';
   if (list.length === 0) {
     wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm">제품이 없습니다.</div>`;
-    return;
+    clearProdSelection(); return;
   }
 
   const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
 
   list.forEach(p => {
-    const cat   = data.categories.find(c => c.id === p.cat);
-    const thumb = p.image
+    const cat      = data.categories.find(c => c.id === p.cat);
+    const selected = _selectedProdId === p.id;
+    const thumb    = p.image
       ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
       : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
 
-    const si = scopeList.findIndex(x => x.id === p.id);
-    const upDis   = si <= 0                    ? 'disabled style="opacity:.3"' : '';
-    const downDis = si >= scopeList.length - 1 ? 'disabled style="opacity:.3"' : '';
-
     const row = document.createElement('div');
-    row.className = 'card p-3 flex items-center gap-3';
+    row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+    if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
+    row.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      selectProd(p.id, p.name);
+    };
     row.innerHTML = `
       ${thumb}
       <div class="flex-1 min-w-0">
@@ -2010,17 +2071,49 @@ function renderAdminProducts() {
         <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
       </div>
       <div class="flex items-center gap-1 shrink-0">
-        <button title="위로" onclick="moveProduct('${p.id}',-1)" ${upDis}
-          class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-base">↑</button>
-        <button title="아래로" onclick="moveProduct('${p.id}',1)" ${downDis}
-          class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-base">↓</button>
         <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
         <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
       </div>`;
     wrap.appendChild(row);
   });
+  _updateProdOrderBar();
 }
 
+function selectProd(id, name) {
+  _selectedProdId = (_selectedProdId === id) ? null : id;
+  if (_selectedProdId) {
+    const label = $('#prod-selected-label');
+    if (label) label.textContent = name + ' 선택됨';
+  }
+  renderAdminProducts();
+}
+function clearProdSelection() {
+  _selectedProdId = null;
+  const bar = $('#prod-order-bar');
+  if (bar) bar.classList.add('hidden');
+  renderAdminProducts();
+}
+function _updateProdOrderBar() {
+  const bar = $('#prod-order-bar');
+  if (!bar) return;
+  if (_selectedProdId) {
+    const filter    = $('#prod-filter').value;
+    const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
+    const idx       = scopeList.findIndex(p => p.id === _selectedProdId);
+    bar.classList.remove('hidden');
+    const btns = bar.querySelectorAll('button');
+    btns[0].disabled    = idx <= 0;
+    btns[0].style.opacity = idx <= 0 ? '0.3' : '';
+    btns[1].disabled    = idx >= scopeList.length - 1;
+    btns[1].style.opacity = idx >= scopeList.length - 1 ? '0.3' : '';
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+function moveProdSelected(dir) {
+  if (!_selectedProdId) return;
+  moveProduct(_selectedProdId, dir);
+}
 function moveProduct(id, dir) {
   const filter = $('#prod-filter').value;
   if (filter) {
