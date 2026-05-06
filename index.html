@@ -1985,7 +1985,7 @@ function moveCatSelected(dir) {
   renderAdminCats();
   requestAnimationFrame(() => {
     const el = document.querySelector(`[data-catid="${_selectedCatId}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 }
 function moveCat(id, dir) {
@@ -2151,7 +2151,7 @@ function moveProduct(id, dir) {
   renderAdminProducts();
   requestAnimationFrame(() => {
     const el = document.querySelector(`[data-prodid="${_selectedProdId}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 }
 function deleteProduct(id) {
