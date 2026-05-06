@@ -507,10 +507,7 @@
           <h2 class="text-xl font-bold">제품 관리</h2>
           <p class="text-sm text-slate-500">제품 카드에 표시될 내용을 편집합니다</p>
         </div>
-        <div class="flex gap-2">
-          <button onclick="toggleSortMode(true)" id="sort-mode-btn" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50">⠿ 순서 변경</button>
-          <button onclick="openProductEditor()" class="btn-primary">+ 제품 추가</button>
-        </div>
+        <button onclick="openProductEditor()" class="btn-primary">+ 제품 추가</button>
       </div>
       <!-- 엑셀 일괄 등록 -->
       <div class="flex gap-2 mb-3 flex-wrap">
@@ -530,11 +527,7 @@
           <option value="">전체 카테고리</option>
         </select>
       </div>
-      <!-- 순서 변경 안내 -->
-      <div id="sort-hint" class="hidden mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-700 flex items-center gap-2">
-        <span>⠿ 핸들을 드래그하거나 ▲▼ 버튼으로 순서를 변경하세요. 변경사항은 자동 저장됩니다.</span>
-        <button onclick="toggleSortMode(false)" class="ml-auto shrink-0 px-2 py-1 rounded-lg bg-amber-200 font-semibold">완료</button>
-      </div>
+      <div class="mb-2 text-xs text-slate-400">↑↓ 버튼으로 순서 변경 · 분류 필터 선택 시 해당 분류 안에서만 이동</div>
       <div id="admin-prod-list" class="flex flex-col gap-2"></div>
     </section>
 
@@ -1129,15 +1122,14 @@ const STORAGE_KEY = 'pharm_warehouse_data_v1';
 
 /* 데이터 로드/저장 */
 function loadData() {
-  // 1순위: 같은 호스팅 폴더의 data.json (모든 환자가 같은 데이터를 보게 하는 운영용)
-  // 2순위: localStorage
-  // 3순위: DEFAULT_DATA
+  // localStorage 우선 (관리자 기기), 없으면 DEFAULT_DATA
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) return migrate(JSON.parse(stored));
   } catch (e) {}
   return JSON.parse(JSON.stringify(DEFAULT_DATA));
 }
+
 function migrate(d) {
   // 누락 필드 보정
   d.settings = Object.assign({}, DEFAULT_DATA.settings, d.settings || {});
@@ -1979,26 +1971,10 @@ function populateProdFilter() {
     data.categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   sel.value = cur;
 }
-let _sortMode = false;
-let _dragSrcId = null;
-
-function toggleSortMode(on) {
-  _sortMode = on;
-  $('#sort-hint')?.classList.toggle('hidden', !on);
-  $('#sort-mode-btn')?.classList.toggle('hidden', on);
-  renderAdminProducts();
-}
-
 function renderAdminProducts() {
   const wrap   = $('#admin-prod-list');
   const search = ($('#prod-search').value || '').trim().toLowerCase();
   const filter = $('#prod-filter').value;
-
-  // 순서 변경 모드: 검색어 있으면 차단 (카테고리 필터는 허용)
-  if (_sortMode && search) {
-    wrap.innerHTML = `<div class="card p-4 text-center text-amber-600 text-sm">검색어를 지우고 순서를 변경해주세요.<br/><span class="text-xs text-slate-400">카테고리 필터는 사용 가능합니다</span></div>`;
-    return;
-  }
 
   let list = data.products.slice();
   if (filter) list = list.filter(p => p.cat === filter);
@@ -2012,207 +1988,57 @@ function renderAdminProducts() {
     return;
   }
 
-  // 힌트 메시지 업데이트
-  if (_sortMode) {
-    const hint = $('#sort-hint span');
-    if (hint) hint.textContent = filter
-      ? `⠿ 이 분류 안에서만 순서를 변경합니다. 드래그하거나 ▲▼ 버튼을 사용하세요.`
-      : `⠿ 전체 제품 순서를 변경합니다. 드래그하거나 ▲▼ 버튼을 사용하세요.`;
-  }
-
-  // ▲▼ 비활성화 기준: 필터 있으면 해당 카테고리 내 위치, 없으면 전체
   const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
 
+  list.forEach(p => {
+    const cat   = data.categories.find(c => c.id === p.cat);
+    const thumb = p.image
+      ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
+      : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
+
+    const si = scopeList.findIndex(x => x.id === p.id);
+    const upDis   = si <= 0                    ? 'disabled style="opacity:.3"' : '';
+    const downDis = si >= scopeList.length - 1 ? 'disabled style="opacity:.3"' : '';
+
     const row = document.createElement('div');
-    row.className = 'card p-3 flex items-center gap-2 transition-all';
-    row.dataset.id = p.id;
-    if (_sortMode) {
-      row.draggable = true;
-      row.style.cursor = 'grab';
-      row.addEventListener('dragstart', onDragStart);
-      row.addEventListener('dragover',  onDragOver);
-      row.addEventListener('dragleave', onDragLeave);
-      row.addEventListener('drop',      onDrop);
-      row.addEventListener('dragend',   onDragEnd);
-      // 터치 지원
-      row.addEventListener('touchstart', onTouchStart, { passive: true });
-      row.addEventListener('touchmove',  onTouchMove,  { passive: false });
-      row.addEventListener('touchend',   onTouchEnd);
-    }
-
-    const scopeIdx     = scopeList.findIndex(x => x.id === p.id);
-    const upDisabled   = scopeIdx <= 0 ? 'disabled' : '';
-    const downDisabled = scopeIdx >= scopeList.length - 1 ? 'disabled' : '';
-
+    row.className = 'card p-3 flex items-center gap-3';
     row.innerHTML = `
-      ${_sortMode ? `<div class="shrink-0 flex flex-col items-center px-1 cursor-grab touch-none select-none">
-        <span class="text-slate-300 text-xl leading-none">⠿</span>
-      </div>` : ''}
       ${thumb}
       <div class="flex-1 min-w-0">
         <div class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</div>
         <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}</div>
         <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
       </div>
-      <div class="flex gap-1.5 shrink-0 items-center">
-        ${_sortMode ? `
-          <div class="flex flex-col gap-0.5">
-            <button onclick="moveProduct('${p.id}',-1)" ${upDisabled}
-              class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
-            <button onclick="moveProduct('${p.id}',1)" ${downDisabled}
-              class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
-          </div>` : `
-          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>`}
+      <div class="flex items-center gap-1 shrink-0">
+        <button title="위로" onclick="moveProduct('${p.id}',-1)" ${upDis}
+          class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-base">↑</button>
+        <button title="아래로" onclick="moveProduct('${p.id}',1)" ${downDis}
+          class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-base">↓</button>
+        <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+        <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
       </div>`;
     wrap.appendChild(row);
   });
 }
 
-/* ── ▲▼ 버튼 이동 ── */
 function moveProduct(id, dir) {
   const filter = $('#prod-filter').value;
-
   if (filter) {
-    // 카테고리 내에서만 이동
     const catIds = data.products.filter(p => p.cat === filter).map(p => p.id);
-    const catIdx = catIds.indexOf(id);
-    const targetCatIdx = catIdx + dir;
-    if (targetCatIdx < 0 || targetCatIdx >= catIds.length) return;
-    const targetId = catIds[targetCatIdx];
-    // 전체 배열에서 두 항목 위치 교환
-    const gi = data.products.findIndex(p => p.id === id);
-    const gj = data.products.findIndex(p => p.id === targetId);
+    const ci = catIds.indexOf(id);
+    const cj = ci + dir;
+    if (cj < 0 || cj >= catIds.length) return;
+    const gi = data.products.findIndex(p => p.id === catIds[ci]);
+    const gj = data.products.findIndex(p => p.id === catIds[cj]);
     [data.products[gi], data.products[gj]] = [data.products[gj], data.products[gi]];
   } else {
-    // 전체 배열에서 이동
-    const idx = data.products.findIndex(p => p.id === id);
-    if (idx < 0) return;
-    const to = idx + dir;
-    if (to < 0 || to >= data.products.length) return;
-    [data.products[idx], data.products[to]] = [data.products[to], data.products[idx]];
+    const i = data.products.findIndex(p => p.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= data.products.length) return;
+    [data.products[i], data.products[j]] = [data.products[j], data.products[i]];
   }
   saveData();
   renderAdminProducts();
-}
-
-/* ── 드래그 앤 드롭 ── */
-function onDragStart(e) {
-  _dragSrcId = this.dataset.id;
-  this.style.opacity = '0.4';
-  e.dataTransfer.effectAllowed = 'move';
-}
-function onDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  this.style.background = '#f0fdf4';
-  this.style.outline = '2px dashed #14b8a6';
-}
-function onDragLeave() {
-  this.style.background = '';
-  this.style.outline = '';
-}
-function onDrop(e) {
-  e.stopPropagation();
-  this.style.background = '';
-  this.style.outline = '';
-  const srcId  = _dragSrcId;
-  const destId = this.dataset.id;
-  if (!srcId || srcId === destId) return;
-  const filter = $('#prod-filter').value;
-
-  if (filter) {
-    // 카테고리 내에서만 재배치
-    const catIds = data.products.filter(p => p.cat === filter).map(p => p.id);
-    const srcCatIdx  = catIds.indexOf(srcId);
-    const destCatIdx = catIds.indexOf(destId);
-    if (srcCatIdx < 0 || destCatIdx < 0) return;
-    // 전체 배열에서 src 제거 후 dest 위치에 삽입
-    const srcGlobal  = data.products.findIndex(p => p.id === srcId);
-    const destGlobal = data.products.findIndex(p => p.id === destId);
-    const [moved] = data.products.splice(srcGlobal, 1);
-    const newDest = data.products.findIndex(p => p.id === destId);
-    data.products.splice(newDest, 0, moved);
-  } else {
-    const srcIdx  = data.products.findIndex(p => p.id === srcId);
-    const destIdx = data.products.findIndex(p => p.id === destId);
-    if (srcIdx < 0 || destIdx < 0) return;
-    const [moved] = data.products.splice(srcIdx, 1);
-    data.products.splice(destIdx, 0, moved);
-  }
-  saveData();
-  renderAdminProducts();
-}
-function onDragEnd() {
-  this.style.opacity = '';
-  // 혹시 남은 강조 제거
-  document.querySelectorAll('#admin-prod-list .card').forEach(r => {
-    r.style.background = '';
-    r.style.outline = '';
-  });
-}
-
-/* ── 터치 드래그 ── */
-let _touchDragEl = null, _touchClone = null, _touchStartY = 0;
-function onTouchStart(e) {
-  _touchDragEl = this;
-  _touchStartY = e.touches[0].clientY;
-  _dragSrcId = this.dataset.id;
-  this.style.opacity = '0.5';
-  // 이동용 클론 생성
-  _touchClone = this.cloneNode(true);
-  _touchClone.style.cssText = `position:fixed;z-index:9999;width:${this.offsetWidth}px;opacity:0.85;pointer-events:none;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.18);`;
-  const rect = this.getBoundingClientRect();
-  _touchClone.style.top  = rect.top  + 'px';
-  _touchClone.style.left = rect.left + 'px';
-  document.body.appendChild(_touchClone);
-}
-function onTouchMove(e) {
-  e.preventDefault();
-  if (!_touchClone) return;
-  const touch = e.touches[0];
-  const rect = _touchDragEl.getBoundingClientRect();
-  _touchClone.style.top = (touch.clientY - 30) + 'px';
-
-  // 겹치는 행 찾기
-  document.querySelectorAll('#admin-prod-list .card').forEach(row => {
-    row.style.background = '';
-    row.style.outline = '';
-    if (row === _touchDragEl) return;
-    const r = row.getBoundingClientRect();
-    if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
-      row.style.background = '#f0fdf4';
-      row.style.outline = '2px dashed #14b8a6';
-    }
-  });
-}
-function onTouchEnd(e) {
-  if (_touchClone) { _touchClone.remove(); _touchClone = null; }
-  if (_touchDragEl) _touchDragEl.style.opacity = '';
-  const touch = e.changedTouches[0];
-  const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-id]');
-  if (target && target.dataset.id && target.dataset.id !== _dragSrcId) {
-    const destId = target.dataset.id;
-    const filter = $('#prod-filter').value;
-    if (filter) {
-      const srcGlobal  = data.products.findIndex(p => p.id === _dragSrcId);
-      const [moved] = data.products.splice(srcGlobal, 1);
-      const newDest = data.products.findIndex(p => p.id === destId);
-      if (newDest >= 0) data.products.splice(newDest, 0, moved);
-      else data.products.push(moved);
-    } else {
-      const srcIdx  = data.products.findIndex(p => p.id === _dragSrcId);
-      const destIdx = data.products.findIndex(p => p.id === destId);
-      if (srcIdx >= 0 && destIdx >= 0) {
-        const [moved] = data.products.splice(srcIdx, 1);
-        data.products.splice(destIdx, 0, moved);
-      }
-    }
-    saveData();
-  }
-  document.querySelectorAll('#admin-prod-list .card').forEach(r => { r.style.background=''; r.style.outline=''; });
-  renderAdminProducts();
-  _touchDragEl = null; _dragSrcId = null;
 }
 function deleteProduct(id) {
   const p = data.products.find(p => p.id === id);
@@ -3367,15 +3193,18 @@ function resetData() {
   showToast('초기값으로 복원되었습니다');
 }
 
-/* ─── 원격 데이터 동기화 (Cloudflare KV 우선) ─── */
+/* ─── 원격 데이터 동기화 (Cloudflare KV) ───
+   localStorage 없는 고객 기기에서만 KV 데이터를 불러와 화면을 갱신.
+   관리자 기기(localStorage 있음)는 건드리지 않아 최신 편집이 유지됨. */
 async function tryLoadRemoteData() {
+  const hasLocal = !!localStorage.getItem(STORAGE_KEY);
+  if (hasLocal) return false;
   try {
     const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
     if (!res.ok) return false;
     const remote = await res.json();
     if (!remote.categories || !remote.products) return false;
     data = migrate(remote);
-    saveData();
     if (!data.categories.find(c => c.id === currentCat)) {
       currentCat = data.categories[0]?.id || 'hot';
     }
@@ -3391,9 +3220,9 @@ async function tryLoadRemoteData() {
 $('#cart-fab').addEventListener('click', () => toggleCart(true));
 
 // 뒤로가기 버튼 → 열린 모달 닫기
-window.addEventListener('popstate', (e) => {
+window.addEventListener('popstate', () => {
   if (!$('#detail-modal').classList.contains('hidden')) {
-    closeDetail(true); // _skipHistory=true: history.back() 재호출 방지
+    closeDetail(true);
     return;
   }
   if (!$('#payment-modal-overlay').classList.contains('hidden')) {
@@ -3406,20 +3235,16 @@ window.addEventListener('popstate', (e) => {
   }
 });
 
-// 관리자 URL(?mode=admin)이면 QR 타이머 우회 + 세션 복원 or 로그인 창 열기
+// 관리자 URL(?mode=admin) → QR 타이머 우회 + 세션 복원 or 로그인 창
 if (_adminUrlMode) {
   if (sessionStorage.getItem('pharm_admin_session')) {
-    // 이전 세션에서 로그인했던 관리자 → 자동 복원
     isAdmin = true;
     window._qrPriceVisible = true;
-    // 화면 안정화 후 관리자 패널 열기
     setTimeout(() => enterAdmin(), 0);
   } else {
-    // 처음 접속 → 로그인 창 자동 표시
     setTimeout(() => openAdminLogin(), 300);
   }
 } else {
-  // 일반 고객 URL → QR 1시간 타이머 적용
   checkQRValidity();
 }
 
@@ -3432,7 +3257,7 @@ applyDeliverySetting();
 tryLoadRemoteData();
 
 /* ═══════════════════════════════════════════════
-   🤖 AI 제품 분석 (Claude API ← Cloudflare Worker)
+   🤖 AI 제품 분석 (Cloudflare Workers AI)
    ═══════════════════════════════════════════════ */
 async function analyzeProductWithAI() {
   const imgData   = $('#prod-edit-image').value;
@@ -3441,7 +3266,6 @@ async function analyzeProductWithAI() {
   const statusEl  = $('#ai-analyze-status');
   const btn       = $('#ai-analyze-btn');
 
-  // 제품명도 없고 사진도 없으면 안내
   if (!existName && !imgData && !imgFile) {
     statusEl.className = 'text-xs text-center mt-1 text-orange-500';
     statusEl.textContent = '⚠️ 제품명을 입력하거나 사진을 업로드해주세요';
@@ -3455,116 +3279,96 @@ async function analyzeProductWithAI() {
   statusEl.classList.remove('hidden');
 
   try {
-    let base64 = null, mediaType = 'image/jpeg';
-
-    // 현재 분류 목록 (AI가 적절한 분류 선택에 활용)
     const catList = (data.categories || []).map(c => ({ id: c.id, name: c.name }));
 
-    // ① 폼에 제품명이 있으면 사진 분석 없이 바로 DB 검색
+    // ① 제품명이 입력된 경우 → 이름 기반 분석
     if (existName) {
-      statusEl.textContent = `🔍 "${existName}" 식약처 DB 검색 중...`;
+      statusEl.textContent = `🔍 "${existName}" AI 분석 중...`;
       const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productName: existName, categories: catList })
+        body: JSON.stringify({ productName: existName, categories: catList }),
       });
+      if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
       const result = await resp.json();
-      if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
-
-      // 폼 채우기
-      let filled = 0;
-      const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
-      setField('prod-edit-tagline', result.tagline);
-      setField('prod-edit-note',    result.pharmacistNote);
-      setField('prod-edit-info',    result.info);
-      if (result.suggestedEmoji)         { $('#prod-edit-emoji').value  = result.suggestedEmoji;  filled++; }
-      if (result.suggestedBadges?.length){ $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
-      if (result.suggestedCategoryId) {
-        const catSel = $('#prod-edit-cat');
-        const opt = [...catSel.options].find(o => o.value === result.suggestedCategoryId);
-        if (opt) { catSel.value = result.suggestedCategoryId; filled++; }
-      }
-      const srcStr = result._source ? ` [${result._source}]` : '';
-      statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-      statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${srcStr}`;
+      if (result.error) throw new Error(result.error);
+      _fillAIResult(result, statusEl);
       return;
     }
 
-    // ② 직접 업로드한 사진 (base64) → Worker에 전송
-    if (imgFile) {
+    // ② 이미지 기반 분석
+    let imgSrc = imgData;
+    if (imgFile && !imgSrc) {
       const reader = new FileReader();
-      base64 = await new Promise((res, rej) => { reader.onload = e => res(e.target.result); reader.onerror = rej; reader.readAsDataURL(imgFile); });
-    } else if (imgData && imgData.startsWith('data:')) {
-      base64 = imgData;
-    }
-
-    if (base64) {
-      const match = base64.match(/^data:([^;]+);base64,(.+)$/);
-      if (match) { mediaType = match[1]; base64 = match[2]; }
-      statusEl.textContent = '🧠 사진 분석 중... (5~10초)';
-      const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageData: base64, mediaType, categories: catList })
+      imgSrc = await new Promise((res, rej) => {
+        reader.onload = e2 => res(e2.target.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(imgFile);
       });
-      const result = await resp.json();
-      if (!resp.ok || result.error) throw new Error(result.error || `서버 오류 ${resp.status}`);
-
-      // 폼 자동 채우기
-      let filled = 0;
-      const setField = (id, val) => { if (val) { $('#' + id).value = val; filled++; } };
-      setField('prod-edit-name',    result.name);
-      setField('prod-edit-tagline', result.tagline);
-      setField('prod-edit-note',    result.pharmacistNote);
-      setField('prod-edit-info',    result.info);
-      if (result.suggestedEmoji)         { $('#prod-edit-emoji').value  = result.suggestedEmoji; updateImgPreview?.(); filled++; }
-      if (result.suggestedBadges?.length){ $('#prod-edit-badges').value = result.suggestedBadges.join(', '); filled++; }
-      if (result.suggestedCategoryId) {
-        const catSel = $('#prod-edit-cat');
-        const opt = [...catSel.options].find(o => o.value === result.suggestedCategoryId);
-        if (opt) { catSel.value = result.suggestedCategoryId; filled++; }
-      }
-      const nameStr2 = result.name ? `\n📦 ${result.name}` : '';
-      const srcStr2  = result._source ? ` [${result._source}]` : '';
-      statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-      statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr2}${srcStr2}`;
-      return;
     }
+    let base64 = imgSrc, mediaType = 'image/jpeg';
+    const m = imgSrc.match(/^data:([^;]+);base64,(.+)$/);
+    if (m) { mediaType = m[1]; base64 = m[2]; }
 
-    // ③ URL 이미지만 있는 경우 → 제품명 입력 안내
-    statusEl.className = 'text-xs text-center mt-1 text-orange-500';
-    statusEl.textContent = '⚠️ URL 사진은 AI 분석이 어려워요. 제품명을 먼저 입력하거나 사진을 직접 업로드해주세요.';
+    statusEl.textContent = '🧠 AI가 사진을 분석 중... (5~10초)';
+    const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: base64, mediaType, categories: catList }),
+    });
+    if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
+    const result = await resp.json();
+    if (result.error) throw new Error(result.error);
+    _fillAIResult(result, statusEl);
 
   } catch (e) {
     statusEl.className = 'text-xs text-center mt-1 text-red-500';
     statusEl.textContent = `❌ 분석 실패: ${e.message}`;
-    console.error('[AI 분석]', e);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력';
+    btn.innerHTML = '🤖 AI 분석';
   }
 }
 
-/* ═══════════════════════════════════════════════
-   📊 엑셀 일괄 등록 (SheetJS)
-   ═══════════════════════════════════════════════ */
+function _fillAIResult(result, statusEl) {
+  let filled = 0;
+  const set = (id, val) => { if (val) { const el = $('#' + id); if (el) { el.value = val; filled++; } } };
+  set('prod-edit-name',    result.name);
+  set('prod-edit-tagline', result.tagline);
+  set('prod-edit-note',    result.pharmacistNote);
+  set('prod-edit-info',    result.info);
+  if (result.suggestedEmoji) {
+    const el = $('#prod-edit-emoji');
+    if (el) { el.value = result.suggestedEmoji; filled++; }
+    if (typeof updateImgPreview === 'function') updateImgPreview();
+  }
+  if (result.suggestedBadges?.length) {
+    const el = $('#prod-edit-badges');
+    if (el) { el.value = result.suggestedBadges.join(', '); filled++; }
+  }
+  if (result.suggestedCategoryId) {
+    const sel = $('#prod-edit-cat');
+    if (sel) {
+      const opt = Array.from(sel.options).find(o => o.value === result.suggestedCategoryId);
+      if (opt) { sel.value = result.suggestedCategoryId; filled++; }
+    }
+  }
+  const nameStr = result.name ? `\n📦 ${result.name}` : '';
+  statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
+  statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}`;
+}
 
 /** 엑셀 템플릿 다운로드 */
 function downloadExcelTemplate() {
   if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
-  const headers = ['제품명*', '분류ID*', '이모지', '한줄소개', '판매가*', '정가', '재고', '배지(콤마구분)', '복약지도', '제품정보'];
-  const example = ['루테인 골드 365일분', 'hot', '💊', '눈 건강 종합 관리, 1일 1정', 39000, 59000, 12, '대용량,함량 1위', '하루 1정, 식후 복용', '루테인 20mg / 12개월분'];
-  const catInfo = [['※ 분류ID 목록 (이 탭 참고)', ...data.categories.map(c => `${c.id} = ${c.name}`)]];
-
+  const headers = ['제품명*','분류ID*','이모지','한줄소개','판매가*','정가','재고','배지(콤마구분)','복약지도','제품정보'];
+  const example = ['루테인 골드 365일분','hot','💊','눈 건강 종합 관리, 1일 1정',39000,59000,12,'대용량,함량 1위','하루 1정, 식후 복용','루테인 20mg / 12개월분'];
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-  // 컬럼 너비
   ws['!cols'] = [20,12,6,25,10,10,8,16,35,25].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, '제품목록');
-
-  const ws2 = XLSX.utils.aoa_to_sheet(catInfo);
+  const ws2 = XLSX.utils.aoa_to_sheet([['※ 분류ID 목록', ...data.categories.map(c => `${c.id} = ${c.name}`)]]);
   XLSX.utils.book_append_sheet(wb, ws2, '분류ID 안내');
-
   XLSX.writeFile(wb, '제품등록_템플릿.xlsx');
 }
 
@@ -3573,389 +3377,60 @@ async function importFromExcel(event) {
   if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
   const file = event.target.files?.[0];
   if (!file) return;
-  event.target.value = ''; // 같은 파일 재선택 허용
-
+  event.target.value = '';
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = (ev) => {
     try {
-      const wb = XLSX.read(e.target.result, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const wb   = XLSX.read(ev.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
       if (rows.length < 2) { alert('데이터가 없습니다. 2행부터 제품을 입력해주세요.'); return; }
-
-      const headerRow = rows[0].map(h => String(h).trim());
-      const colIdx = {
-        name:    headerRow.findIndex(h => h.includes('제품명')),
-        cat:     headerRow.findIndex(h => h.includes('분류ID')),
-        emoji:   headerRow.findIndex(h => h.includes('이모지')),
-        tagline: headerRow.findIndex(h => h.includes('한줄소개')),
-        price:   headerRow.findIndex(h => h.includes('판매가')),
-        list:    headerRow.findIndex(h => h.includes('정가')),
-        stock:   headerRow.findIndex(h => h.includes('재고')),
-        badges:  headerRow.findIndex(h => h.includes('배지')),
-        note:    headerRow.findIndex(h => h.includes('복약지도')),
-        info:    headerRow.findIndex(h => h.includes('제품정보')),
+      const hdr = rows[0].map(h => String(h).trim());
+      const col = n => hdr.findIndex(h => h.includes(n));
+      const cx  = {
+        name: col('제품명'), cat: col('분류ID'), emoji: col('이모지'),
+        tagline: col('한줄소개'), price: col('판매가'), list: col('정가'),
+        stock: col('재고'), badges: col('배지'), note: col('복약지도'), info: col('제품정보'),
       };
-
-      if (colIdx.name < 0 || colIdx.price < 0) {
+      if (cx.name < 0 || cx.price < 0) {
         alert('헤더에 "제품명"과 "판매가" 컬럼이 필요합니다.\n템플릿을 다운받아 사용해주세요.');
         return;
       }
-
-      const newProducts = [];
+      const newProds = [];
       for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        const name = String(r[colIdx.name] || '').trim();
-        if (!name) continue;
-        const price = parseInt(r[colIdx.price]) || 0;
-        if (price <= 0) continue;
-
-        const catVal = colIdx.cat >= 0 ? String(r[colIdx.cat] || '').trim() : '';
+        const r     = rows[i];
+        const name  = String(r[cx.name]  || '').trim(); if (!name) continue;
+        const price = parseInt(r[cx.price]) || 0;       if (price <= 0) continue;
+        const catVal = cx.cat >= 0 ? String(r[cx.cat] || '').trim() : '';
         const cat = catVal && data.categories.find(c => c.id === catVal) ? catVal : (data.categories[0]?.id || 'hot');
-
-        newProducts.push({
-          id: 'p_' + Date.now() + '_' + i,
-          cat,
-          emoji:   colIdx.emoji   >= 0 ? String(r[colIdx.emoji]   || '').trim() || '💊' : '💊',
+        newProds.push({
+          id: 'p_' + Date.now() + '_' + i, cat,
+          emoji:   cx.emoji   >= 0 ? String(r[cx.emoji]   || '').trim() || '💊' : '💊',
           name,
-          tagline: colIdx.tagline >= 0 ? String(r[colIdx.tagline] || '').trim() : '',
+          tagline: cx.tagline >= 0 ? String(r[cx.tagline] || '').trim() : '',
           price,
-          list:    colIdx.list    >= 0 ? (parseInt(r[colIdx.list]) || null) : null,
-          stock:   colIdx.stock   >= 0 ? (parseInt(r[colIdx.stock]) || 0) : 0,
-          badges:  colIdx.badges  >= 0 ? String(r[colIdx.badges]  || '').split(',').map(b => b.trim()).filter(Boolean) : [],
-          pharmacistNote: colIdx.note >= 0 ? String(r[colIdx.note] || '').trim() : '',
-          info:    colIdx.info    >= 0 ? String(r[colIdx.info]    || '').trim() : '',
+          list:    cx.list  >= 0 ? (parseInt(r[cx.list])  || null) : null,
+          stock:   cx.stock >= 0 ? (parseInt(r[cx.stock]) || 0)    : 0,
+          badges:  cx.badges >= 0 ? String(r[cx.badges] || '').split(',').map(b => b.trim()).filter(Boolean) : [],
+          pharmacistNote: cx.note >= 0 ? String(r[cx.note] || '').trim() : '',
+          info:    cx.info  >= 0 ? String(r[cx.info]  || '').trim() : '',
         });
       }
-
-      if (newProducts.length === 0) { alert('유효한 제품 행이 없습니다.'); return; }
-
-      const mode = confirm(
-        `✅ ${newProducts.length}개 제품을 가져옵니다.\n\n` +
-        `[확인] = 기존 제품에 추가\n[취소] = 기존 제품 전체 교체`
-      );
-      if (mode) {
-        data.products = [...data.products, ...newProducts];
+      if (newProds.length === 0) { alert('유효한 제품 행이 없습니다.'); return; }
+      const add = confirm(`✅ ${newProds.length}개 제품을 가져옵니다.\n\n[확인] = 기존 제품에 추가\n[취소] = 기존 제품 전체 교체`);
+      if (add) {
+        data.products = [...data.products, ...newProds];
       } else {
         if (!confirm('기존 제품이 모두 삭제됩니다. 계속할까요?')) return;
-        data.products = newProducts;
+        data.products = newProds;
       }
-
       saveData();
       renderAdminProducts();
       renderProducts();
-      showToast(`✅ ${newProducts.length}개 제품 등록 완료!`);
-    } catch (err) {
-      alert('엑셀 파일 읽기 오류: ' + err.message);
-    }
+      showToast(`✅ ${newProds.length}개 제품 등록 완료!`);
+    } catch (err) { alert('엑셀 파일 읽기 오류: ' + err.message); }
   };
   reader.readAsArrayBuffer(file);
-}
-
-/* ─── 이모지 피커 ─── */
-let _emojiTargetId = null;
-
-const EMOJI_LIST = [
-  // 약국/건강
-  '💊','🩺','🏥','💉','🩹','🌡️','🩻','🧬','🔬','🩸',
-  // 보충제/영양
-  '🐟','🌿','🍋','🫐','🧄','🌾','🥦','🥕','🍇','🌰',
-  // 신체/증상
-  '👁️','👀','💪','🦴','🧠','❤️','🫁','🦷','🦵','🤲',
-  // 컨디션
-  '😴','💤','🏃','🧘','🌞','☁️','🤒','🥱','😵','🥹',
-  // 강조/아이콘
-  '⭐','🔥','✨','💫','🌟','👍','✅','🎯','💡','🔑',
-  // 색상 원형
-  '🟡','🟠','🔴','🟢','🔵','🟣','🟤','⚫','⚪','🔶',
-  // 식품/음료
-  '🍵','☕','🧃','🥛','🍯','🫖','💧','🧊','🌊','🍀',
-  // 기타 유용
-  '📦','🎁','🏷️','🛒','💰','📋','🗂️','📌','🔖','🩷',
-];
-
-function openEmojiPicker(targetId, triggerBtn) {
-  // 이미 열려있으면 닫기
-  const existing = document.getElementById('emoji-picker-popup');
-  if (existing) {
-    if (_emojiTargetId === targetId) { existing.remove(); _emojiTargetId = null; return; }
-    existing.remove();
-  }
-  _emojiTargetId = targetId;
-
-  // 팝업 생성
-  const popup = document.createElement('div');
-  popup.id = 'emoji-picker-popup';
-  popup.style.cssText = `
-    position:fixed; z-index:9999;
-    background:#fff; border:1px solid #e2e8f0; border-radius:16px;
-    box-shadow:0 8px 32px rgba(0,0,0,0.18); padding:12px;
-    width:280px; max-height:320px; overflow-y:auto;
-  `;
-
-  // 카테고리 탭 없이 그냥 그리드
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid; grid-template-columns:repeat(8,1fr); gap:4px;';
-
-  EMOJI_LIST.forEach(em => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = em;
-    btn.style.cssText = 'font-size:1.4rem; padding:4px; border-radius:8px; border:none; background:none; cursor:pointer; text-align:center; line-height:1;';
-    btn.onmouseenter = () => btn.style.background = '#f1f5f9';
-    btn.onmouseleave = () => btn.style.background = 'none';
-    btn.onclick = () => {
-      const input = document.getElementById(targetId);
-      if (input) {
-        input.value = em;
-        input.dispatchEvent(new Event('input'));
-        // 카테고리 미리보기 업데이트
-        if (targetId === 'cat-edit-emoji') updateCatEmojiPreview();
-      }
-      popup.remove();
-      _emojiTargetId = null;
-    };
-    grid.appendChild(btn);
-  });
-
-  popup.appendChild(grid);
-  document.body.appendChild(popup);
-
-  // 버튼 위치에 맞게 팝업 위치 조정
-  const rect = triggerBtn.getBoundingClientRect();
-  let top = rect.bottom + 6;
-  let left = rect.left;
-  if (left + 280 > window.innerWidth) left = window.innerWidth - 288;
-  if (top + 320 > window.innerHeight) top = rect.top - 326;
-  popup.style.top = top + 'px';
-  popup.style.left = left + 'px';
-
-  // 바깥 클릭 시 닫기
-  setTimeout(() => {
-    document.addEventListener('click', function handler(e) {
-      if (!popup.contains(e.target) && e.target !== triggerBtn) {
-        popup.remove();
-        _emojiTargetId = null;
-        document.removeEventListener('click', handler);
-      }
-    });
-  }, 0);
-}
-
-/* ─── 묶음 할인 관리 ─── */
-function renderAdminBundles() {
-  const list = $('#admin-bundle-list');
-  if (!list) return;
-  if (!data.bundles?.length) {
-    list.innerHTML = `<div class="text-slate-400 text-sm text-center py-8">등록된 묶음이 없습니다. 위 "+ 묶음 추가" 버튼을 눌러 만들어보세요.</div>`;
-    return;
-  }
-  list.innerHTML = data.bundles.map(b => {
-    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
-    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
-    const save = sumPrice - (b.bundlePrice || 0);
-    return `
-    <div class="card p-4 flex items-start gap-3 ${b.active ? '' : 'opacity-50'}">
-      <div class="text-3xl w-12 text-center shrink-0">${b.emoji || '🎁'}</div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-bold text-base">${b.name}</span>
-          ${b.active ? '<span class="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">노출중</span>' : '<span class="text-xs bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">숨김</span>'}
-        </div>
-        ${b.desc ? `<div class="text-sm text-slate-500 mt-0.5">${b.desc}</div>` : ''}
-        <div class="text-sm text-slate-600 mt-1.5 flex flex-wrap gap-1">
-          ${prods.map(p => `<span class="bg-slate-100 rounded-lg px-2 py-0.5">${p.emoji||'💊'} ${p.name}</span>`).join('')}
-        </div>
-        <div class="mt-2 flex items-baseline gap-3">
-          <span class="text-lg font-bold text-teal-700">${(b.bundlePrice||0).toLocaleString()}원</span>
-          <span class="text-sm text-slate-400 line-through">${sumPrice.toLocaleString()}원</span>
-          ${save > 0 ? `<span class="text-xs font-bold text-red-500">-${save.toLocaleString()}원 절약!</span>` : ''}
-        </div>
-      </div>
-      <div class="flex flex-col gap-1.5 shrink-0">
-        <button onclick="openBundleEditor('${b.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold">수정</button>
-        <button onclick="deleteBundle('${b.id}')" class="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-semibold">삭제</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openBundleEditor(id) {
-  const editing = id ? data.bundles?.find(b => b.id === id) : null;
-  $('#bundle-editor-title').textContent = editing ? '묶음 수정' : '묶음 추가';
-  $('#bundle-edit-id').value       = id || '';
-  $('#bundle-edit-emoji').value    = editing?.emoji    || '🎁';
-  $('#bundle-edit-name').value     = editing?.name     || '';
-  $('#bundle-edit-desc').value     = editing?.desc     || '';
-  $('#bundle-edit-price').value    = editing?.bundlePrice || '';
-  $('#bundle-edit-active').checked = editing ? !!editing.active : true;
-
-  // 제품 체크박스 렌더링
-  const box = $('#bundle-product-checkboxes');
-  const checkedIds = new Set(editing?.productIds || []);
-  box.innerHTML = data.products.map(p =>
-    `<label class="flex items-center gap-2 cursor-pointer hover:bg-white rounded-lg px-2 py-1 transition-colors">
-      <input type="checkbox" class="bundle-prod-check w-4 h-4 accent-teal-500" value="${p.id}" ${checkedIds.has(p.id) ? 'checked' : ''} onchange="updateBundlePriceSummary()" />
-      <span class="text-lg">${p.emoji||'💊'}</span>
-      <span class="text-sm flex-1">${p.name}</span>
-      <span class="text-sm font-semibold text-teal-700 shrink-0">${(p.price||0).toLocaleString()}원</span>
-    </label>`
-  ).join('');
-
-  updateBundlePriceSummary();
-  $('#bundle-editor-overlay').classList.remove('hidden');
-}
-
-function closeBundleEditor() { $('#bundle-editor-overlay').classList.add('hidden'); }
-
-function updateBundlePriceSummary() {
-  const checked = [...document.querySelectorAll('.bundle-prod-check:checked')];
-  const sumPrice = checked.reduce((s, cb) => {
-    const p = data.products.find(x => x.id === cb.value);
-    return s + (p?.price || 0);
-  }, 0);
-  const bundlePrice = parseInt($('#bundle-edit-price')?.value || 0) || 0;
-  const save = sumPrice - bundlePrice;
-  const summary = $('#bundle-price-summary');
-  if (summary) {
-    summary.classList.toggle('hidden', checked.length === 0);
-    $('#bundle-sum-price').textContent     = sumPrice.toLocaleString() + '원';
-    $('#bundle-final-display').textContent = bundlePrice ? bundlePrice.toLocaleString() + '원' : '—';
-    const saveEl = $('#bundle-save-display');
-    saveEl.textContent = (save > 0 && bundlePrice) ? `${save.toLocaleString()}원 절약 (${Math.round(save/sumPrice*100)}% 할인)` : '';
-  }
-}
-
-function saveBundle() {
-  const id      = $('#bundle-edit-id').value.trim();
-  const emoji   = $('#bundle-edit-emoji').value.trim() || '🎁';
-  const name    = $('#bundle-edit-name').value.trim();
-  const desc    = $('#bundle-edit-desc').value.trim();
-  const price   = parseInt($('#bundle-edit-price').value) || 0;
-  const active  = !!$('#bundle-edit-active').checked;
-  const prodIds = [...document.querySelectorAll('.bundle-prod-check:checked')].map(cb => cb.value);
-
-  if (!name)           { showToast('묶음 이름을 입력하세요'); return; }
-  if (prodIds.length < 2) { showToast('구성 제품을 2개 이상 선택하세요'); return; }
-  if (!price)          { showToast('묶음 특가를 입력하세요'); return; }
-
-  if (!data.bundles) data.bundles = [];
-  if (id) {
-    const idx = data.bundles.findIndex(b => b.id === id);
-    if (idx >= 0) data.bundles[idx] = { id, emoji, name, desc, productIds: prodIds, bundlePrice: price, active };
-  } else {
-    data.bundles.push({ id: 'bundle_' + Date.now(), emoji, name, desc, productIds: prodIds, bundlePrice: price, active });
-  }
-  saveData();
-  closeBundleEditor();
-  renderAdminBundles();
-  renderSidebarBundleBtn();
-  showToast('묶음 저장 완료!');
-}
-
-function deleteBundle(id) {
-  if (!confirm('이 묶음을 삭제할까요?')) return;
-  data.bundles = (data.bundles || []).filter(b => b.id !== id);
-  saveData();
-  renderAdminBundles();
-  renderSidebarBundleBtn();
-  showToast('묶음 삭제됨');
-}
-
-/* ─── 키오스크 묶음 뷰 ─── */
-function renderSidebarBundleBtn() {
-  const activeBundles = (data.bundles || []).filter(b => b.active);
-  const btn = $('#sidebar-bundle-btn');
-  const cnt = $('#sidebar-bundle-count');
-  if (btn) btn.classList.toggle('hidden', activeBundles.length === 0);
-  if (cnt) cnt.textContent = activeBundles.length || '';
-}
-
-function showBundleView() {
-  $('#bundle-view').classList.remove('hidden');
-  $('#normal-product-view').classList.add('hidden');
-  // 사이드바 활성 표시
-  document.querySelectorAll('#sidebar-cats button').forEach(b => b.classList.remove('active'));
-  $('#sidebar-bundle-tab')?.classList.add('active');
-  renderBundleCards();
-}
-
-function hideBundleView() {
-  $('#bundle-view').classList.add('hidden');
-  $('#normal-product-view').classList.remove('hidden');
-}
-
-function renderBundleCards() {
-  const cards = $('#bundle-cards');
-  if (!cards) return;
-  const activeBundles = (data.bundles || []).filter(b => b.active);
-  if (!activeBundles.length) { cards.innerHTML = '<div class="text-slate-400 text-center py-12">현재 진행 중인 묶음 특가가 없습니다.</div>'; return; }
-
-  cards.innerHTML = activeBundles.map(b => {
-    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
-    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
-    const save = sumPrice - (b.bundlePrice || 0);
-    const savePct = sumPrice > 0 ? Math.round(save / sumPrice * 100) : 0;
-    return `
-    <div class="card p-5 border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white">
-      <div class="flex items-start gap-3 mb-3">
-        <div class="text-4xl">${b.emoji || '🎁'}</div>
-        <div>
-          <div class="font-bold text-lg leading-tight">${b.name}</div>
-          ${b.desc ? `<div class="text-sm text-slate-500 mt-0.5">${b.desc}</div>` : ''}
-          ${savePct > 0 ? `<div class="mt-1 inline-block bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">-${savePct}% 할인</div>` : ''}
-        </div>
-      </div>
-      <div class="space-y-1.5 mb-4">
-        ${prods.map(p => `
-          <div class="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-slate-100">
-            <span class="text-lg">${p.emoji||'💊'}</span>
-            <span class="flex-1 text-sm font-medium">${p.name}</span>
-            <span class="text-sm text-slate-500">${(p.price||0).toLocaleString()}원</span>
-          </div>`).join('')}
-      </div>
-      <div class="flex items-end justify-between mt-3 pt-3 border-t border-amber-200">
-        <div>
-          <div class="text-sm text-slate-400 line-through">${sumPrice.toLocaleString()}원</div>
-          <div class="text-2xl font-black text-teal-700">${(b.bundlePrice||0).toLocaleString()}원</div>
-          ${save > 0 ? `<div class="text-xs font-bold text-red-500">${save.toLocaleString()}원 절약!</div>` : ''}
-        </div>
-        <button onclick="addBundleToCart('${b.id}')" class="btn-primary px-5 py-3 text-base">
-          🛒 묶음 담기
-        </button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function addBundleToCart(bundleId) {
-  const bundle = (data.bundles || []).find(b => b.id === bundleId);
-  if (!bundle) return;
-  const prods = (bundle.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
-  if (!prods.length) { showToast('구성 제품을 찾을 수 없습니다'); return; }
-  prods.forEach(p => {
-    const item = cart.find(c => c.id === p.id);
-    if (item) item.qty += 1;
-    else cart.push({ id: p.id, qty: 1 });
-  });
-  // 묶음 할인 금액을 별도 메모로 저장 (주문서에 표시)
-  const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
-  const discount = sumPrice - bundle.bundlePrice;
-  if (discount > 0) {
-    if (!cart._bundleDiscounts) cart._bundleDiscounts = [];
-    // 배열에 직접 붙이면 forEach 등에서 무시됨 — 별도 전역 변수 활용
-    if (!window._bundleDiscounts) window._bundleDiscounts = [];
-    window._bundleDiscounts.push({ name: bundle.name, discount });
-  }
-  renderCartBar();
-  showToast(`🎁 ${bundle.name} 묶음이 담겼어요! (${prods.length}개 제품)`);
-}
-
-function updateCatEmojiPreview() {
-  const val = ($('#cat-edit-emoji')?.value || '').trim();
-  const preview = document.getElementById('cat-emoji-preview');
-  if (preview) preview.textContent = val || '';
 }
 </script>
 </body>
