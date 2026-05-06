@@ -328,11 +328,21 @@
                               rounded-t-3xl bg-white shadow-2xl slide-up overflow-hidden flex flex-col"
      style="max-height:92vh">
   <div id="detail-content" class="flex-1 overflow-y-auto"></div>
-  <div class="border-t border-slate-100 p-4 grid grid-cols-2 gap-2">
-    <button onclick="closeDetail()" class="py-3 rounded-xl bg-slate-100 font-semibold">닫기</button>
-    <button id="detail-add" class="py-3 rounded-xl text-white font-bold" style="background: var(--brand);">
-      🛒 장바구니에 담기
-    </button>
+  <div class="border-t border-slate-100 p-4 space-y-2">
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-500 font-semibold">수량</span>
+      <button class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-lg leading-none" onclick="adjDetailQty(-1)">−</button>
+      <input id="detail-qty" type="number" min="1" max="99" value="1"
+        class="w-14 h-8 text-center rounded-lg border border-slate-200 text-sm font-semibold"
+        style="appearance:textfield;-moz-appearance:textfield;" />
+      <button class="w-8 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-lg leading-none" onclick="adjDetailQty(1)">＋</button>
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="closeDetail()" class="py-3 rounded-xl bg-slate-100 font-semibold">닫기</button>
+      <button id="detail-add" class="py-3 rounded-xl text-white font-bold" style="background: var(--brand);">
+        🛒 장바구니에 담기
+      </button>
+    </div>
   </div>
 </div>
 
@@ -545,6 +555,23 @@
             <input id="setting-tagline" type="text" />
           </div>
           <button onclick="saveSettings()" class="btn-primary">저장</button>
+        </div>
+
+        <hr class="border-slate-100" />
+
+        <div>
+          <div class="font-bold mb-2">수령 방법 설정</div>
+          <p class="text-sm text-slate-500 mb-3">약국 수령은 항상 표시됩니다. 택배 수령은 운영 상황에 따라 켜고 끄세요.</p>
+          <label class="flex items-center justify-between p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-lg">📦</div>
+              <div>
+                <div class="text-sm font-semibold">택배 수령 허용</div>
+                <div class="text-xs text-slate-400">OFF 시 고객 화면에서 배송 옵션 숨김</div>
+              </div>
+            </div>
+            <input type="checkbox" id="setting-allow-delivery" class="w-5 h-5 accent-teal-600 cursor-pointer" onchange="saveDeliveryToggle()" />
+          </label>
         </div>
 
         <hr class="border-slate-100" />
@@ -881,6 +908,7 @@ const DEFAULT_DATA = {
     pharmacyName: '로컬 창고약국',
     tagline: '대기 중에 약사님이 큐레이션한 제품을 둘러보세요',
     adminPin: '1234',
+    allowDelivery: false,
     payMethods: { kakao: false, naver: false, toss: false, counter: true },
     mfdsApiKey: '',
     ntfyTopic: '',   // 비어있으면 첫 실행 시 자동 생성
@@ -1145,7 +1173,15 @@ function renderProductCards(list, grid) {
         ${(!p.priceHidden && window._qrPriceVisible && discount > 0) ? `<div class="text-xs font-bold mt-0.5" style="color: var(--hot);">창고형 ${discount}% 절약</div>` : ''}
         ${(!p.stock || p.stock <= 0)
           ? `<button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold" style="background:#f1f5f9;color:#94a3b8;cursor:not-allowed;" disabled>품절</button>`
-          : `<button class="mt-3 w-full py-2 rounded-lg text-sm font-semibold" style="background: var(--brand-soft); color: var(--brand);" onclick="event.stopPropagation(); addToCart('${p.id}')">🛒 담기</button>`
+          : `<div class="mt-3 flex items-center gap-1" onclick="event.stopPropagation()">
+               <button class="w-7 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',-1)">−</button>
+               <input id="cqty-${p.id}" type="number" min="1" max="99" value="1"
+                 class="w-10 h-8 text-center rounded-lg border border-slate-200 text-sm font-semibold"
+                 style="appearance:textfield;-moz-appearance:textfield;"
+                 onclick="event.stopPropagation()" />
+               <button class="w-7 h-8 rounded-lg border border-slate-200 text-slate-500 font-bold text-base leading-none" onclick="event.stopPropagation(); adjCardQty('${p.id}',1)">＋</button>
+               <button class="flex-1 h-8 rounded-lg text-sm font-semibold" style="background: var(--brand-soft); color: var(--brand);" onclick="event.stopPropagation(); addToCartQty('${p.id}')">🛒 담기</button>
+             </div>`
         }
       </div>
     `;
@@ -1154,6 +1190,30 @@ function renderProductCards(list, grid) {
 }
 
 /* 카트 */
+// 카드 수량 ± 버튼
+function adjCardQty(id, delta) {
+  const el = $(`#cqty-${id}`);
+  if (!el) return;
+  el.value = Math.max(1, Math.min(99, (parseInt(el.value) || 1) + delta));
+}
+// 카드에서 수량 지정 후 담기
+function addToCartQty(id) {
+  const el = $(`#cqty-${id}`);
+  const qty = el ? Math.max(1, parseInt(el.value) || 1) : 1;
+  if (el) el.value = 1; // 담은 후 수량 리셋
+  const item = cart.find(c => c.id === id);
+  if (item) item.qty += qty;
+  else cart.push({ id, qty });
+  updateCartUI();
+  const p = data.products.find(p => p.id === id);
+  showToast(`🛒 ${qty > 1 ? qty + '개 ' : ''}담았어요: ${p.name}`);
+}
+// 상세 모달 수량 ± 버튼
+function adjDetailQty(delta) {
+  const el = $('#detail-qty');
+  if (!el) return;
+  el.value = Math.max(1, Math.min(99, (parseInt(el.value) || 1) + delta));
+}
 function addToCart(id) {
   const item = cart.find(c => c.id === id);
   if (item) item.qty++;
@@ -1587,6 +1647,8 @@ function openDetail(id) {
     <div class="h-4"></div>
   `;
   const addBtn = $('#detail-add');
+  const detailQtyEl = $('#detail-qty');
+  if (detailQtyEl) detailQtyEl.value = 1; // 열 때마다 수량 초기화
   if (!p.stock || p.stock <= 0) {
     addBtn.textContent = '품절';
     addBtn.disabled = true;
@@ -1594,7 +1656,15 @@ function openDetail(id) {
     addBtn.style.color = '#94a3b8';
     addBtn.style.cursor = 'not-allowed';
   } else {
-    addBtn.onclick = () => { addToCart(id); closeDetail(); };
+    addBtn.onclick = () => {
+      const qty = detailQtyEl ? Math.max(1, parseInt(detailQtyEl.value) || 1) : 1;
+      const item = cart.find(c => c.id === id);
+      if (item) item.qty += qty;
+      else cart.push({ id, qty });
+      updateCartUI();
+      showToast(`🛒 ${qty > 1 ? qty + '개 ' : ''}담았어요: ${p.name}`);
+      closeDetail();
+    };
   }
   $('#detail-overlay').classList.remove('hidden');
   $('#detail-modal').classList.remove('hidden');
@@ -2746,6 +2816,8 @@ function fillSettings() {
   $('#setting-pin').value     = '';
   const ntfyEl = $('#ntfy-topic-display');
   if (ntfyEl) ntfyEl.textContent = getNtfyTopic();
+  const deliveryEl = $('#setting-allow-delivery');
+  if (deliveryEl) deliveryEl.checked = !!data.settings.allowDelivery;
   const pm = data.settings.payMethods || { kakao:false, naver:false, toss:false, counter:true };
   $('#pay-toggle-kakao').checked = !!pm.kakao;
   $('#pay-toggle-naver').checked = !!pm.naver;
@@ -2764,6 +2836,23 @@ function saveSettings() {
   saveData();
   applyHeader();
   showToast('약국 정보가 저장되었습니다');
+}
+function saveDeliveryToggle() {
+  data.settings.allowDelivery = !!$('#setting-allow-delivery').checked;
+  saveData();
+  applyDeliverySetting();
+  showToast(data.settings.allowDelivery ? '택배 수령 허용됨' : '택배 수령 숨김 (약국 수령만)');
+}
+function applyDeliverySetting() {
+  const allowed = !!data.settings.allowDelivery;
+  const deliveryBtn = $('#delivery-btn');
+  if (deliveryBtn) {
+    deliveryBtn.style.display = allowed ? '' : 'none';
+  }
+  // 택배가 숨겨진 경우 pickup으로 강제 전환
+  if (!allowed && typeof setDeliveryMode === 'function') {
+    setDeliveryMode('pickup');
+  }
 }
 function savePayMethods() {
   data.settings.payMethods = {
@@ -2973,6 +3062,7 @@ applyHeader();
 renderCategories();
 renderProducts();
 updateCartUI();
+applyDeliverySetting(); // 택배 수령 허용 여부 반영
 tryLoadRemoteData(); // 백그라운드에서 Cloudflare KV 최신 데이터 로드
 
 /* ═══════════════════════════════════════════════
