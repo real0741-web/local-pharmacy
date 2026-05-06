@@ -1994,10 +1994,9 @@ function renderAdminProducts() {
   const search = ($('#prod-search').value || '').trim().toLowerCase();
   const filter = $('#prod-filter').value;
 
-  // 순서 변경 모드: 검색/필터 비활성화 안내
-  const isFiltered = !!(search || filter);
-  if (_sortMode && isFiltered) {
-    wrap.innerHTML = `<div class="card p-4 text-center text-amber-600 text-sm">순서 변경 중에는 검색/필터를 해제해주세요.</div>`;
+  // 순서 변경 모드: 검색어 있으면 차단 (카테고리 필터는 허용)
+  if (_sortMode && search) {
+    wrap.innerHTML = `<div class="card p-4 text-center text-amber-600 text-sm">검색어를 지우고 순서를 변경해주세요.<br/><span class="text-xs text-slate-400">카테고리 필터는 사용 가능합니다</span></div>`;
     return;
   }
 
@@ -2013,18 +2012,16 @@ function renderAdminProducts() {
     return;
   }
 
-  // 전체 인덱스 (재정렬용)
-  const allIds = data.products.map(p => p.id);
+  // 힌트 메시지 업데이트
+  if (_sortMode) {
+    const hint = $('#sort-hint span');
+    if (hint) hint.textContent = filter
+      ? `⠿ 이 분류 안에서만 순서를 변경합니다. 드래그하거나 ▲▼ 버튼을 사용하세요.`
+      : `⠿ 전체 제품 순서를 변경합니다. 드래그하거나 ▲▼ 버튼을 사용하세요.`;
+  }
 
-  list.forEach((p, listIdx) => {
-    const cat   = data.categories.find(c => c.id === p.cat);
-    const thumb = p.image
-      ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
-      : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
-
-    const realIdx = allIds.indexOf(p.id);
-    const upDisabled   = realIdx <= 0 ? 'disabled' : '';
-    const downDisabled = realIdx >= allIds.length - 1 ? 'disabled' : '';
+  // ▲▼ 비활성화 기준: 필터 있으면 해당 카테고리 내 위치, 없으면 전체
+  const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
 
     const row = document.createElement('div');
     row.className = 'card p-3 flex items-center gap-2 transition-all';
@@ -2042,6 +2039,10 @@ function renderAdminProducts() {
       row.addEventListener('touchmove',  onTouchMove,  { passive: false });
       row.addEventListener('touchend',   onTouchEnd);
     }
+
+    const scopeIdx     = scopeList.findIndex(x => x.id === p.id);
+    const upDisabled   = scopeIdx <= 0 ? 'disabled' : '';
+    const downDisabled = scopeIdx >= scopeList.length - 1 ? 'disabled' : '';
 
     row.innerHTML = `
       ${_sortMode ? `<div class="shrink-0 flex flex-col items-center px-1 cursor-grab touch-none select-none">
@@ -2070,13 +2071,27 @@ function renderAdminProducts() {
 
 /* ── ▲▼ 버튼 이동 ── */
 function moveProduct(id, dir) {
-  const idx = data.products.findIndex(p => p.id === id);
-  if (idx < 0) return;
-  const to = idx + dir;
-  if (to < 0 || to >= data.products.length) return;
-  const tmp = data.products[idx];
-  data.products[idx] = data.products[to];
-  data.products[to] = tmp;
+  const filter = $('#prod-filter').value;
+
+  if (filter) {
+    // 카테고리 내에서만 이동
+    const catIds = data.products.filter(p => p.cat === filter).map(p => p.id);
+    const catIdx = catIds.indexOf(id);
+    const targetCatIdx = catIdx + dir;
+    if (targetCatIdx < 0 || targetCatIdx >= catIds.length) return;
+    const targetId = catIds[targetCatIdx];
+    // 전체 배열에서 두 항목 위치 교환
+    const gi = data.products.findIndex(p => p.id === id);
+    const gj = data.products.findIndex(p => p.id === targetId);
+    [data.products[gi], data.products[gj]] = [data.products[gj], data.products[gi]];
+  } else {
+    // 전체 배열에서 이동
+    const idx = data.products.findIndex(p => p.id === id);
+    if (idx < 0) return;
+    const to = idx + dir;
+    if (to < 0 || to >= data.products.length) return;
+    [data.products[idx], data.products[to]] = [data.products[to], data.products[idx]];
+  }
   saveData();
   renderAdminProducts();
 }
@@ -2104,11 +2119,27 @@ function onDrop(e) {
   const srcId  = _dragSrcId;
   const destId = this.dataset.id;
   if (!srcId || srcId === destId) return;
-  const srcIdx  = data.products.findIndex(p => p.id === srcId);
-  const destIdx = data.products.findIndex(p => p.id === destId);
-  if (srcIdx < 0 || destIdx < 0) return;
-  const [moved] = data.products.splice(srcIdx, 1);
-  data.products.splice(destIdx, 0, moved);
+  const filter = $('#prod-filter').value;
+
+  if (filter) {
+    // 카테고리 내에서만 재배치
+    const catIds = data.products.filter(p => p.cat === filter).map(p => p.id);
+    const srcCatIdx  = catIds.indexOf(srcId);
+    const destCatIdx = catIds.indexOf(destId);
+    if (srcCatIdx < 0 || destCatIdx < 0) return;
+    // 전체 배열에서 src 제거 후 dest 위치에 삽입
+    const srcGlobal  = data.products.findIndex(p => p.id === srcId);
+    const destGlobal = data.products.findIndex(p => p.id === destId);
+    const [moved] = data.products.splice(srcGlobal, 1);
+    const newDest = data.products.findIndex(p => p.id === destId);
+    data.products.splice(newDest, 0, moved);
+  } else {
+    const srcIdx  = data.products.findIndex(p => p.id === srcId);
+    const destIdx = data.products.findIndex(p => p.id === destId);
+    if (srcIdx < 0 || destIdx < 0) return;
+    const [moved] = data.products.splice(srcIdx, 1);
+    data.products.splice(destIdx, 0, moved);
+  }
   saveData();
   renderAdminProducts();
 }
@@ -2161,13 +2192,23 @@ function onTouchEnd(e) {
   const touch = e.changedTouches[0];
   const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-id]');
   if (target && target.dataset.id && target.dataset.id !== _dragSrcId) {
-    const srcIdx  = data.products.findIndex(p => p.id === _dragSrcId);
-    const destIdx = data.products.findIndex(p => p.id === target.dataset.id);
-    if (srcIdx >= 0 && destIdx >= 0) {
-      const [moved] = data.products.splice(srcIdx, 1);
-      data.products.splice(destIdx, 0, moved);
-      saveData();
+    const destId = target.dataset.id;
+    const filter = $('#prod-filter').value;
+    if (filter) {
+      const srcGlobal  = data.products.findIndex(p => p.id === _dragSrcId);
+      const [moved] = data.products.splice(srcGlobal, 1);
+      const newDest = data.products.findIndex(p => p.id === destId);
+      if (newDest >= 0) data.products.splice(newDest, 0, moved);
+      else data.products.push(moved);
+    } else {
+      const srcIdx  = data.products.findIndex(p => p.id === _dragSrcId);
+      const destIdx = data.products.findIndex(p => p.id === destId);
+      if (srcIdx >= 0 && destIdx >= 0) {
+        const [moved] = data.products.splice(srcIdx, 1);
+        data.products.splice(destIdx, 0, moved);
+      }
     }
+    saveData();
   }
   document.querySelectorAll('#admin-prod-list .card').forEach(r => { r.style.background=''; r.style.outline=''; });
   renderAdminProducts();
