@@ -720,7 +720,11 @@
     <input type="hidden" id="cat-edit-id" />
     <div class="field">
       <label>이모지 (1자)</label>
-      <input id="cat-edit-emoji" type="text" maxlength="2" placeholder="예: 🔥" />
+      <div class="flex gap-2 items-center">
+        <input id="cat-edit-emoji" type="text" maxlength="2" placeholder="예: 🔥" class="w-24 text-center text-2xl" oninput="updateCatEmojiPreview()" />
+        <button type="button" onclick="openEmojiPicker('cat-edit-emoji', this)" class="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-600">😊 선택</button>
+        <span id="cat-emoji-preview" class="text-3xl w-10 text-center"></span>
+      </div>
     </div>
     <div class="field">
       <label>분류 이름</label>
@@ -799,7 +803,10 @@
             <input id="prod-img-file" type="file" accept="image/*" class="hidden" onchange="handleProductImageUpload(event)" />
           </label>
           <!-- 이모지 입력 (사진 없을 때 대용) -->
-          <input id="prod-edit-emoji" type="text" maxlength="2" placeholder="이모지 입력 (예: 💊)" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" oninput="updateImgPreview()" />
+          <div class="flex gap-2 items-center">
+            <input id="prod-edit-emoji" type="text" maxlength="2" placeholder="이모지 (예: 💊)" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm text-center text-xl" oninput="updateImgPreview()" />
+            <button type="button" onclick="openEmojiPicker('prod-edit-emoji', this)" class="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-600 shrink-0">😊 선택</button>
+          </div>
           <button type="button" onclick="clearProductImage()" class="text-xs text-slate-400 hover:text-red-400">사진 삭제</button>
           <!-- 박스사진 쇼핑몰 검색 -->
           <button type="button" onclick="openBoxPhotoSearch()"
@@ -1798,10 +1805,11 @@ function deleteCat(id) {
 function openCatEditor(id) {
   const editing = id ? data.categories.find(c => c.id === id) : null;
   $('#cat-editor-title').textContent = editing ? '분류 수정' : '분류 추가';
-  $('#cat-edit-id').value   = id || '';
+  $('#cat-edit-id').value    = id || '';
   $('#cat-edit-emoji').value = editing?.emoji || '';
   $('#cat-edit-name').value  = editing?.name  || '';
   $('#cat-edit-desc').value  = editing?.desc  || '';
+  updateCatEmojiPreview();
   $('#cat-editor-overlay').classList.remove('hidden');
 }
 function closeCatEditor() { $('#cat-editor-overlay').classList.add('hidden'); }
@@ -3270,6 +3278,102 @@ async function importFromExcel(event) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+/* ─── 이모지 피커 ─── */
+let _emojiTargetId = null;
+
+const EMOJI_LIST = [
+  // 약국/건강
+  '💊','🩺','🏥','💉','🩹','🌡️','🩻','🧬','🔬','🩸',
+  // 보충제/영양
+  '🐟','🌿','🍋','🫐','🧄','🌾','🥦','🥕','🍇','🌰',
+  // 신체/증상
+  '👁️','👀','💪','🦴','🧠','❤️','🫁','🦷','🦵','🤲',
+  // 컨디션
+  '😴','💤','🏃','🧘','🌞','☁️','🤒','🥱','😵','🥹',
+  // 강조/아이콘
+  '⭐','🔥','✨','💫','🌟','👍','✅','🎯','💡','🔑',
+  // 색상 원형
+  '🟡','🟠','🔴','🟢','🔵','🟣','🟤','⚫','⚪','🔶',
+  // 식품/음료
+  '🍵','☕','🧃','🥛','🍯','🫖','💧','🧊','🌊','🍀',
+  // 기타 유용
+  '📦','🎁','🏷️','🛒','💰','📋','🗂️','📌','🔖','🩷',
+];
+
+function openEmojiPicker(targetId, triggerBtn) {
+  // 이미 열려있으면 닫기
+  const existing = document.getElementById('emoji-picker-popup');
+  if (existing) {
+    if (_emojiTargetId === targetId) { existing.remove(); _emojiTargetId = null; return; }
+    existing.remove();
+  }
+  _emojiTargetId = targetId;
+
+  // 팝업 생성
+  const popup = document.createElement('div');
+  popup.id = 'emoji-picker-popup';
+  popup.style.cssText = `
+    position:fixed; z-index:9999;
+    background:#fff; border:1px solid #e2e8f0; border-radius:16px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.18); padding:12px;
+    width:280px; max-height:320px; overflow-y:auto;
+  `;
+
+  // 카테고리 탭 없이 그냥 그리드
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(8,1fr); gap:4px;';
+
+  EMOJI_LIST.forEach(em => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = em;
+    btn.style.cssText = 'font-size:1.4rem; padding:4px; border-radius:8px; border:none; background:none; cursor:pointer; text-align:center; line-height:1;';
+    btn.onmouseenter = () => btn.style.background = '#f1f5f9';
+    btn.onmouseleave = () => btn.style.background = 'none';
+    btn.onclick = () => {
+      const input = document.getElementById(targetId);
+      if (input) {
+        input.value = em;
+        input.dispatchEvent(new Event('input'));
+        // 카테고리 미리보기 업데이트
+        if (targetId === 'cat-edit-emoji') updateCatEmojiPreview();
+      }
+      popup.remove();
+      _emojiTargetId = null;
+    };
+    grid.appendChild(btn);
+  });
+
+  popup.appendChild(grid);
+  document.body.appendChild(popup);
+
+  // 버튼 위치에 맞게 팝업 위치 조정
+  const rect = triggerBtn.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = rect.left;
+  if (left + 280 > window.innerWidth) left = window.innerWidth - 288;
+  if (top + 320 > window.innerHeight) top = rect.top - 326;
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+
+  // 바깥 클릭 시 닫기
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!popup.contains(e.target) && e.target !== triggerBtn) {
+        popup.remove();
+        _emojiTargetId = null;
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 0);
+}
+
+function updateCatEmojiPreview() {
+  const val = ($('#cat-edit-emoji')?.value || '').trim();
+  const preview = document.getElementById('cat-emoji-preview');
+  if (preview) preview.textContent = val || '';
 }
 </script>
 </body>
