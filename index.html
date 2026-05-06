@@ -3193,6 +3193,213 @@ function resetData() {
   showToast('초기값으로 복원되었습니다');
 }
 
+/* ─── 묶음 할인 ─── */
+function renderSidebarBundleBtn() {
+  const activeBundles = (data.bundles || []).filter(b => b.active);
+  const btn = $('#sidebar-bundle-btn');
+  if (!btn) return;
+  if (activeBundles.length > 0) {
+    btn.classList.remove('hidden');
+    const countEl = $('#sidebar-bundle-count');
+    if (countEl) countEl.textContent = activeBundles.length;
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+function showBundleView() {
+  $('#bundle-view').classList.remove('hidden');
+  $('#normal-product-view').classList.add('hidden');
+  const btn = $('#sidebar-bundle-tab');
+  if (btn) btn.dataset.active = 'true';
+  $$('.cat-btn').forEach(b => b.dataset.active = 'false');
+  renderBundleCards();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function hideBundleView() {
+  $('#bundle-view')?.classList.add('hidden');
+  $('#normal-product-view')?.classList.remove('hidden');
+  const btn = $('#sidebar-bundle-tab');
+  if (btn) btn.dataset.active = 'false';
+}
+
+function renderBundleCards() {
+  const grid = $('#bundle-cards');
+  if (!grid) return;
+  grid.innerHTML = '';
+  const active = (data.bundles || []).filter(b => b.active);
+  if (active.length === 0) {
+    grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">활성화된 묶음이 없습니다.</div>';
+    return;
+  }
+  active.forEach(bundle => {
+    const prods = (bundle.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
+    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+    const save = sumPrice - (bundle.bundlePrice || 0);
+    const card = document.createElement('div');
+    card.className = 'card p-4';
+    card.innerHTML = `
+      <div class="flex items-start gap-3 mb-3">
+        <span class="text-3xl">${bundle.emoji || '🎁'}</span>
+        <div>
+          <div class="font-bold text-base leading-tight">${bundle.name}</div>
+          <div class="text-sm text-slate-500 mt-0.5">${bundle.desc || ''}</div>
+        </div>
+      </div>
+      <div class="space-y-1 mb-3">
+        ${prods.map(p => `<div class="flex items-center gap-2 text-sm"><span>${p.emoji||'📦'}</span><span class="flex-1 line-clamp-1">${p.name}</span><span class="font-semibold text-slate-600">${fmt(p.price)}</span></div>`).join('')}
+      </div>
+      <div class="border-t border-slate-100 pt-2 mt-1">
+        ${sumPrice !== bundle.bundlePrice ? `<div class="text-xs text-slate-400 line-through text-right mb-0.5">개별 합산 ${fmt(sumPrice)}</div>` : ''}
+        <div class="flex items-center justify-between">
+          <div class="text-lg font-bold text-teal-700">${fmt(bundle.bundlePrice || 0)}</div>
+          ${save > 0 ? `<div class="text-xs font-bold text-red-500">🔥 ${fmt(save)} 절약!</div>` : ''}
+        </div>
+      </div>
+      <button onclick="addBundleToCart('${bundle.id}')"
+        class="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white"
+        style="background:var(--brand);">🛒 묶음 전체 담기</button>`;
+    grid.appendChild(card);
+  });
+}
+
+function addBundleToCart(bundleId) {
+  const bundle = (data.bundles || []).find(b => b.id === bundleId);
+  if (!bundle) return;
+  let added = 0;
+  (bundle.productIds || []).forEach(pid => {
+    const p = data.products.find(p => p.id === pid);
+    if (!p || (!p.stock || p.stock <= 0)) return;
+    const existing = cart.find(c => c.id === pid);
+    if (existing) existing.qty++;
+    else cart.push({ id: pid, qty: 1 });
+    added++;
+  });
+  updateCartUI();
+  showToast(`🎁 ${bundle.name} (${added}개 제품) 담겼습니다!`);
+}
+
+/* ─── 관리자: 묶음 관리 ─── */
+function renderAdminBundles() {
+  const wrap = $('#admin-bundle-list');
+  wrap.innerHTML = '';
+  if (!data.bundles || data.bundles.length === 0) {
+    wrap.innerHTML = '<div class="card p-6 text-center text-slate-400 text-sm">묶음이 없습니다. + 묶음 추가 버튼을 눌러보세요.</div>';
+    return;
+  }
+  data.bundles.forEach((b, i) => {
+    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
+    const row = document.createElement('div');
+    row.className = 'card p-4';
+    row.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">${b.emoji || '🎁'}</span>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold leading-tight">${b.name}</div>
+          <div class="text-xs text-slate-400 mt-0.5">${prods.map(p=>p.name).join(' + ')} → ${fmt(b.bundlePrice||0)}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs px-2 py-0.5 rounded-full font-semibold ${b.active ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-400'}">${b.active ? '활성' : '비활성'}</span>
+          <button onclick="openBundleEditor('${b.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+          <button onclick="deleteBundle('${b.id}')" class="btn-danger text-sm">삭제</button>
+        </div>
+      </div>`;
+    wrap.appendChild(row);
+  });
+}
+
+function openBundleEditor(id) {
+  const editing = id ? (data.bundles || []).find(b => b.id === id) : null;
+  $('#bundle-editor-title').textContent = editing ? '묶음 수정' : '묶음 추가';
+  $('#bundle-edit-id').value       = id || '';
+  $('#bundle-edit-emoji').value    = editing?.emoji || '🎁';
+  $('#bundle-edit-name').value     = editing?.name  || '';
+  $('#bundle-edit-desc').value     = editing?.desc  || '';
+  $('#bundle-edit-price').value    = editing?.bundlePrice || '';
+  $('#bundle-edit-active').checked = editing ? !!editing.active : true;
+
+  // 제품 체크박스 목록
+  const box = $('#bundle-product-checkboxes');
+  box.innerHTML = '';
+  data.products.forEach(p => {
+    const checked = editing?.productIds?.includes(p.id) ? 'checked' : '';
+    const cat = data.categories.find(c => c.id === p.cat);
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-2 cursor-pointer text-sm';
+    label.innerHTML = `
+      <input type="checkbox" class="bundle-prod-check w-4 h-4 accent-teal-500" value="${p.id}" ${checked} onchange="updateBundlePriceSummary()" />
+      <span>${p.emoji||'📦'}</span>
+      <span class="flex-1 line-clamp-1">${p.name}</span>
+      <span class="text-xs text-slate-400">${fmt(p.price)}</span>`;
+    box.appendChild(label);
+  });
+
+  $('#bundle-editor-overlay').classList.remove('hidden');
+  updateBundlePriceSummary();
+}
+
+function closeBundleEditor() {
+  $('#bundle-editor-overlay').classList.add('hidden');
+}
+
+function updateBundlePriceSummary() {
+  const checked = Array.from($$('.bundle-prod-check:checked'));
+  const sumPrice = checked.reduce((s, cb) => {
+    const p = data.products.find(p => p.id === cb.value);
+    return s + (p?.price || 0);
+  }, 0);
+  const bundlePrice = parseInt($('#bundle-edit-price').value) || 0;
+  const summary = $('#bundle-price-summary');
+  if (checked.length >= 1) {
+    summary.classList.remove('hidden');
+    $('#bundle-sum-price').textContent = fmt(sumPrice);
+    $('#bundle-final-display').textContent = bundlePrice ? fmt(bundlePrice) : '미입력';
+    const save = sumPrice - bundlePrice;
+    $('#bundle-save-display').textContent = (bundlePrice > 0 && save > 0) ? `${fmt(save)} 절약!` : '';
+  } else {
+    summary.classList.add('hidden');
+  }
+}
+
+function saveBundle() {
+  const id      = $('#bundle-edit-id').value;
+  const emoji   = $('#bundle-edit-emoji').value.trim() || '🎁';
+  const name    = $('#bundle-edit-name').value.trim();
+  const desc    = $('#bundle-edit-desc').value.trim();
+  const price   = parseInt($('#bundle-edit-price').value) || 0;
+  const active  = $('#bundle-edit-active').checked;
+  const prodIds = Array.from($$('.bundle-prod-check:checked')).map(cb => cb.value);
+
+  if (!name) { alert('묶음 이름을 입력해주세요'); return; }
+  if (prodIds.length < 1) { alert('제품을 1개 이상 선택해주세요'); return; }
+  if (price <= 0) { alert('묶음 특가를 입력해주세요'); return; }
+
+  if (!data.bundles) data.bundles = [];
+  if (id) {
+    const idx = data.bundles.findIndex(b => b.id === id);
+    if (idx >= 0) data.bundles[idx] = { id, emoji, name, desc, productIds: prodIds, bundlePrice: price, active };
+  } else {
+    data.bundles.push({ id: 'b_' + Date.now().toString(36), emoji, name, desc, productIds: prodIds, bundlePrice: price, active });
+  }
+  saveData();
+  closeBundleEditor();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('묶음이 저장됐습니다');
+}
+
+function deleteBundle(id) {
+  const b = (data.bundles || []).find(b => b.id === id);
+  if (!b) return;
+  if (!confirm(`"${b.name}" 묶음을 삭제할까요?`)) return;
+  data.bundles = data.bundles.filter(b => b.id !== id);
+  saveData();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('삭제됐습니다');
+}
+
 /* ─── 원격 데이터 동기화 (Cloudflare KV) ───
    localStorage 없는 고객 기기에서만 KV 데이터를 불러와 화면을 갱신.
    관리자 기기(localStorage 있음)는 건드리지 않아 최신 편집이 유지됨. */
@@ -3216,6 +3423,10 @@ async function tryLoadRemoteData() {
   } catch(e) { return false; }
 }
 
+/* ─── 초기화 ─── */
+$('#cart-fab').addEventListener('click', () => toggleCart(true));
+
+// 뒤로가기 버튼 → 열린 모달 닫기
 /* ─── 초기화 ─── */
 $('#cart-fab').addEventListener('click', () => toggleCart(true));
 
@@ -3281,7 +3492,6 @@ async function analyzeProductWithAI() {
   try {
     const catList = (data.categories || []).map(c => ({ id: c.id, name: c.name }));
 
-    // ① 제품명이 입력된 경우 → 이름 기반 분석
     if (existName) {
       statusEl.textContent = `🔍 "${existName}" AI 분석 중...`;
       const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
@@ -3296,7 +3506,6 @@ async function analyzeProductWithAI() {
       return;
     }
 
-    // ② 이미지 기반 분석
     let imgSrc = imgData;
     if (imgFile && !imgSrc) {
       const reader = new FileReader();
@@ -3358,7 +3567,6 @@ function _fillAIResult(result, statusEl) {
   statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}`;
 }
 
-/** 엑셀 템플릿 다운로드 */
 function downloadExcelTemplate() {
   if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
   const headers = ['제품명*','분류ID*','이모지','한줄소개','판매가*','정가','재고','배지(콤마구분)','복약지도','제품정보'];
@@ -3372,7 +3580,6 @@ function downloadExcelTemplate() {
   XLSX.writeFile(wb, '제품등록_템플릿.xlsx');
 }
 
-/** 엑셀 파일 → 제품 일괄 등록 */
 async function importFromExcel(event) {
   if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
   const file = event.target.files?.[0];
