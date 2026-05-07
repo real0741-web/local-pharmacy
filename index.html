@@ -2016,6 +2016,11 @@ function deleteCat(id) {
   saveData();
   renderAdminCats();
 }
+function updateCatEmojiPreview() {
+  const v = ($('#cat-edit-emoji').value || '').trim();
+  const el = $('#cat-emoji-preview');
+  if (el) el.textContent = v;
+}
 function openCatEditor(id) {
   const editing = id ? data.categories.find(c => c.id === id) : null;
   $('#cat-editor-title').textContent = editing ? '분류 수정' : '분류 추가';
