@@ -897,6 +897,7 @@
         <button id="stype-drug"    onclick="setSearchType('drug')"    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-teal-600 text-white transition-colors">💊 의약품</button>
         <button id="stype-health"  onclick="setSearchType('health')"  class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors">🌿 건강기능식품</button>
         <button id="stype-quasi"   onclick="setSearchType('quasi')"   class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors">🧴 의약외품</button>
+        <button id="stype-general" onclick="setSearchType('general')" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors">🛒 일반상품</button>
       </div>
 
       <!-- 제품명 검색 행 -->
@@ -2845,12 +2846,46 @@ async function _aiSummarizeDrug({ name, efcy, use, warn, ingr }) {
   }
 }
 
+/* ─── 일반상품 AI 설명 생성 ─── */
+async function searchGeneralProduct() {
+  const keyword = ($('#drug-name-input').value || '').trim();
+  if (!keyword) { showToast('상품명을 입력해주세요'); return; }
+  const status = $('#barcode-status');
+  status.textContent = `🛒 "${keyword}" AI 상품 정보 생성 중... 🤖`;
+  status.style.color = '#64748b';
+  $('#drug-search-results').classList.add('hidden');
+  try {
+    const res = await fetch(`${PROXY}/?action=summarizeProduct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: keyword }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const result = await res.json();
+    if (!res.ok || result.error) throw new Error(result.error || 'AI 생성 실패');
+    if (keyword)        $('#prod-edit-name').value  = keyword;
+    if (result.info)    $('#prod-edit-info').value  = result.info;
+    if (result.note)    $('#prod-edit-note').value  = result.note;
+    if (result.emoji) {
+      const emojiEl = $('#prod-edit-emoji');
+      if (emojiEl && !emojiEl.value) emojiEl.value = result.emoji;
+    }
+    status.textContent = `✅ "${keyword}" AI 상품 정보 입력 완료 🤖 — 가격·재고는 직접 입력하세요`;
+    status.style.color = '#0f766e';
+    showToast(`✅ ${keyword} 정보가 자동 입력됐어요`);
+  } catch(e) {
+    $('#prod-edit-name').value = keyword;
+    status.textContent = `⚠️ AI 생성 실패 — 이름만 입력됐어요 (${e.message})`;
+    status.style.color = '#b45309';
+  }
+}
+
 /* ─── 검색 타입 선택 ─── */
-let _searchType = 'drug'; // drug | health | quasi
+let _searchType = 'drug'; // drug | health | quasi | general
 
 function setSearchType(type) {
   _searchType = type;
-  ['drug','health','quasi'].forEach(t => {
+  ['drug','health','quasi','general'].forEach(t => {
     const btn = $(`#stype-${t}`);
     if (t === type) {
       btn.classList.add('bg-teal-600','text-white');
@@ -2861,18 +2896,20 @@ function setSearchType(type) {
     }
   });
   const placeholders = {
-    drug:   '의약품 제품명 (예: 타이레놀, 판콜에이)',
-    health: '건강기능식품 제품명 (예: 락토핏, 루테인)',
-    quasi:  '의약외품 제품명 (예: 박카스, 후시딘)',
+    drug:    '의약품 제품명 (예: 타이레놀, 판콜에이)',
+    health:  '건강기능식품 제품명 (예: 락토핏, 루테인)',
+    quasi:   '의약외품 제품명 (예: 박카스, 후시딘)',
+    general: '상품명 (예: 덴탈플로스, 립밤, 핫팩)',
   };
   $('#drug-name-input').placeholder = placeholders[type];
 }
 
 /** 통합 검색 진입점 */
 function searchProductByName() {
-  if (_searchType === 'drug')   searchDrugByName();
-  else if (_searchType === 'health') searchHealthFood();
-  else if (_searchType === 'quasi')  searchQuasiDrug();
+  if (_searchType === 'drug')        searchDrugByName();
+  else if (_searchType === 'health')  searchHealthFood();
+  else if (_searchType === 'quasi')   searchQuasiDrug();
+  else if (_searchType === 'general') searchGeneralProduct();
 }
 
 /* ─── 건강기능식품 검색 (식약처 HtfsInfoService) ─── */
