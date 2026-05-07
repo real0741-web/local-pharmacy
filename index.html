@@ -1157,12 +1157,20 @@ function migrate(d) {
 }
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  // Cloudflare KV에 백그라운드 동기화 (실패해도 로컬 데이터는 유지)
+  // Cloudflare KV에 백그라운드 동기화
   fetch(`${PROXY}/?action=saveData`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
-  }).catch(() => {});
+  }).then(r => {
+    if (r.ok) {
+      showToast('☁️ 저장 완료 (매장에 즉시 반영됨)');
+    } else {
+      showToast('⚠️ 서버 저장 실패 — 매장 화면에 반영 안 될 수 있어요');
+    }
+  }).catch(() => {
+    showToast('⚠️ 서버 연결 실패 — 매장 화면에 반영 안 될 수 있어요');
+  });
 }
 
 let data = loadData();
@@ -3518,14 +3526,16 @@ function deleteBundle(id) {
    localStorage 없는 고객 기기에서만 KV 데이터를 불러와 화면을 갱신.
    관리자 기기(localStorage 있음)는 건드리지 않아 최신 편집이 유지됨. */
 async function tryLoadRemoteData() {
-  const hasLocal = !!localStorage.getItem(STORAGE_KEY);
-  if (hasLocal) return false;
+  // 관리자 기기(mode=admin)는 localStorage 우선 — KV로 덮어쓰지 않음
+  if (_adminUrlMode) return false;
   try {
     const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
     if (!res.ok) return false;
     const remote = await res.json();
     if (!remote.categories || !remote.products) return false;
     data = migrate(remote);
+    // 고객 기기 캐시도 최신으로 갱신
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     if (!data.categories.find(c => c.id === currentCat)) {
       currentCat = data.categories[0]?.id || 'hot';
     }
