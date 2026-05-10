@@ -74,12 +74,28 @@
     background: #f1f5f9; color: #334155; font-weight: 600;
     padding: 10px 16px; border-radius: 10px;
   }
-  /* 자동 인쇄: 인쇄 시 영수증만 보임 */
+  /* 자동 인쇄: 인쇄 시 주문서만 보임 (80mm 열전사 프린터 최적화) */
   @media print {
-    @page { margin: 8mm; }   /* 브라우저 기본 여백 최소화 */
+    @page { size: 80mm auto; margin: 4mm 3mm; }
     body > *:not(#print-area) { display: none !important; }
-    #print-area { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
-    #print-area pre { font-family: 'Courier New', monospace; font-size: 11px; white-space: pre; line-height: 1.5; }
+    #print-area { display: block !important; position: fixed; top: 0; left: 0; width: 74mm; background: white; }
+    /* ── 주문서 HTML 스타일 ── */
+    .rc-wrap { font-family: 'Courier New', monospace; font-size: 11px; width: 100%; color: #000; }
+    .rc-header { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 2px; }
+    .rc-sub { text-align: center; font-size: 10px; margin-bottom: 2px; }
+    .rc-hr { border: none; border-top: 1px dashed #000; margin: 4px 0; }
+    .rc-hr-solid { border: none; border-top: 1px solid #000; margin: 4px 0; }
+    .rc-row { display: flex; justify-content: space-between; padding: 2px 0; gap: 4px; }
+    .rc-name { flex: 1; word-break: break-all; }
+    .rc-qty { font-size: 10px; }
+    .rc-price { white-space: nowrap; }
+    .rc-note { font-size: 10px; padding: 1px 0 4px 10px; word-break: break-all; line-height: 1.4; }
+    .rc-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 13px; padding: 3px 0; }
+    .rc-meta { display: flex; justify-content: space-between; font-size: 10px; padding: 1px 0; }
+    .rc-bold { font-weight: bold; }
+    .rc-footer { text-align: center; font-size: 10px; margin-top: 3px; }
+    /* ── 텍스트 폴백 ── */
+    #print-area pre { font-family: 'Courier New', monospace; font-size: 11px; white-space: pre-wrap; line-height: 1.5; }
   }
   #print-area { display: none; }
 
@@ -431,7 +447,10 @@
 </div>
 
 <!-- 자동 인쇄 영역 (화면엔 안 보이고 인쇄 시에만 표시) -->
-<div id="print-area"><pre id="print-content"></pre></div>
+<div id="print-area">
+  <div id="print-receipt"></div>
+  <pre id="print-content"></pre>
+</div>
 
 <!-- 관리자 대시보드 (전체화면 오버레이) -->
 <div id="admin-dashboard" class="hidden fixed inset-0 z-[70] bg-slate-50 overflow-y-auto">
@@ -619,6 +638,10 @@
           <div class="field">
             <label>약국 이름 (헤더 표시)</label>
             <input id="setting-name" type="text" />
+          </div>
+          <div class="field">
+            <label>약국 전화번호 (주문서 인쇄 시 표시)</label>
+            <input id="setting-phone" type="text" placeholder="예: 02-123-4567" />
           </div>
           <div class="field">
             <label>슬로건 (헤더 부제)</label>
@@ -1009,6 +1032,12 @@
         <span>💬 가격 문의로 표시 (가격 숨김)</span>
       </label>
     </div>
+    <div class="field">
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input id="prod-edit-hidden" type="checkbox" class="w-4 h-4 accent-rose-500" />
+        <span>🚫 매장 화면에서 숨김 (관리자만 확인 가능)</span>
+      </label>
+    </div>
     <div class="grid grid-cols-2 gap-2 mt-2">
       <button onclick="closeProductEditor()" class="btn-secondary">취소</button>
       <button onclick="saveProduct()" class="btn-primary">저장</button>
@@ -1247,11 +1276,13 @@ function renderProducts() {
   const searchEl = $('#customer-search');
   const keyword = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
-  // 검색 중이면 전체 카테고리에서 검색
+  // 검색 중이면 전체 카테고리에서 검색 (숨김 제품 제외)
   if (keyword) {
     const allMatched = data.products.filter(p =>
-      (p.name||'').toLowerCase().includes(keyword) ||
-      (p.tagline||'').toLowerCase().includes(keyword)
+      !p.hidden && (
+        (p.name||'').toLowerCase().includes(keyword) ||
+        (p.tagline||'').toLowerCase().includes(keyword)
+      )
     );
     $('#cat-title').textContent = `🔍 "${searchEl.value}" 검색 결과`;
     $('#cat-desc').textContent = '';
@@ -1278,7 +1309,7 @@ function renderProducts() {
   $('#cat-title').textContent = `${cat.emoji} ${cat.name}`;
   $('#cat-desc').textContent = cat.desc || '';
 
-  const list = data.products.filter(p => p.cat === currentCat);
+  const list = data.products.filter(p => p.cat === currentCat && !p.hidden);
   $('#cat-count').textContent = `총 ${list.length}개`;
 
   const grid = $('#product-grid');
@@ -1655,6 +1686,7 @@ async function selectPayment(method) {
   saveMyOrder(order.id);   // 세션별 내 주문 기록
 
   await sendTelegramAlert(order);
+  autoPrintOrder(order); // 주문 즉시 인쇄 (SSE 대기 없이)
 
   // 결제 모달 닫기
   $('#payment-modal-overlay').classList.add('hidden');
@@ -2090,11 +2122,15 @@ function renderAdminProducts() {
       if (e.target.closest('button')) return;
       selectProd(p.id, p.name);
     };
+    if (p.hidden) row.style.opacity = '0.45';
     row.innerHTML = `
       ${thumb}
       <div class="flex-1 min-w-0">
         <div class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</div>
-        <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}</div>
+        <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}
+          ${p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full" style="background:#fee2e2;color:#b91c1c;">숨김</span>` : ''}
+          ${(!p.stock || p.stock <= 0) && !p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">품절</span>` : ''}
+        </div>
         <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
       </div>
       <div class="flex items-center gap-1 shrink-0">
@@ -2193,6 +2229,7 @@ function openProductEditor(id) {
   $('#prod-edit-note').value     = editing?.pharmacistNote || '';
   $('#prod-edit-info').value     = editing?.info     || '';
   $('#prod-edit-price-hidden').checked = editing?.priceHidden || false;
+  $('#prod-edit-hidden').checked       = editing?.hidden      || false;
   $('#prod-edit-image').value    = editing?.image    || '';
   $('#barcode-input').value      = '';
   $('#drug-name-input').value    = '';
@@ -2286,6 +2323,7 @@ function saveProduct() {
     pharmacistNote: $('#prod-edit-note').value.trim(),
     info:          $('#prod-edit-info').value.trim(),
     priceHidden:   $('#prod-edit-price-hidden').checked,
+    hidden:        $('#prod-edit-hidden').checked,
     image:         $('#prod-edit-image').value || '',
   };
   if (id) {
@@ -2463,18 +2501,76 @@ function playBeep() {
   } catch(_) {}
 }
 
-/* ── 자동 인쇄 (현재 페이지 직접 출력 — 팝업 차단 없음) ── */
+/* ── 주문서 HTML 생성 (buildReceiptHTML) ── */
+function buildReceiptHTML(order) {
+  const pharmName  = data.settings.pharmacyName  || '로컬 창고약국';
+  const pharmPhone = data.settings.pharmacyPhone || '';
+  const now = new Date(order.timestamp || Date.now());
+  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
+  const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+  const itemsHTML = order.items.map(i => {
+    const lineTotal = fmt((i.price || 0) * (i.qty || 1));
+    return `
+      <div class="rc-row">
+        <span class="rc-name">${i.name}<span class="rc-qty"> ×${i.qty}</span></span>
+        <span class="rc-price">${lineTotal}</span>
+      </div>
+      ${i.note ? `<div class="rc-note">💊 ${i.note}</div>` : ''}
+    `;
+  }).join('');
+
+  const payLabel = order.paymentMethod === 'counter' ? '현장 결제' : (order.paymentMethod || '현장 결제');
+  const deliveryHTML = order.delivery
+    ? `<hr class="rc-hr"/>
+       <div class="rc-sub">📦 배송: ${order.delivery.name} / ${order.delivery.phone}</div>
+       <div class="rc-sub">${order.delivery.addr}${order.delivery.addr2 ? ' ' + order.delivery.addr2 : ''}</div>
+       ${order.delivery.memo ? `<div class="rc-sub">메모: ${order.delivery.memo}</div>` : ''}`
+    : '';
+
+  return `<div class="rc-wrap">
+    <div class="rc-header">${pharmName}</div>
+    ${pharmPhone ? `<div class="rc-sub">☎ ${pharmPhone}</div>` : ''}
+    <hr class="rc-hr-solid"/>
+    <div class="rc-row">
+      <span class="rc-bold">접수 ${order.customerName}</span>
+      <span>${dateStr} ${timeStr}</span>
+    </div>
+    <hr class="rc-hr"/>
+    ${itemsHTML}
+    <hr class="rc-hr"/>
+    <div class="rc-total"><span>합 계</span><span>${fmt(order.total)}</span></div>
+    <div class="rc-meta"><span>결제</span><span>${payLabel}</span></div>
+    ${deliveryHTML}
+    <hr class="rc-hr-solid"/>
+    <div class="rc-footer">💊 복약 관련 문의는 약사에게</div>
+    <div class="rc-footer">감사합니다 🙏</div>
+  </div>`;
+}
+
+/* ── 자동 인쇄 — 구조화된 주문 객체 (로컬 주문 즉시 출력) ── */
+let _lastPrintedOrder = null;
+function autoPrintOrder(order) {
+  _lastPrintedOrder = order;
+  $('#print-receipt').innerHTML = buildReceiptHTML(order);
+  $('#print-content').textContent = '';
+  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  document.title = pharmName + ' 주문서';
+  window.print();
+  setTimeout(() => { document.title = pharmName + ' - 디지털 가이드'; }, 1000);
+}
+
+/* ── 자동 인쇄 — 텍스트 폴백 (SSE/원격 주문 수신 시) ── */
 function autoPrint(text) {
+  $('#print-receipt').innerHTML = '';
   const pharmName = data.settings.pharmacyName || '로컬 창고약국';
   const bar = '━'.repeat(32);
   const pad = (s) => s.padStart(Math.floor((32 + s.length) / 2)).padEnd(32);
   const header = `${bar}\n${pad(pharmName)}\n${bar}\n`;
   $('#print-content').textContent = header + text;
-  // 브라우저 탭 타이틀도 맞춰줌 (인쇄 헤더용)
-  document.title = pharmName + ' - 주문 접수증';
+  document.title = pharmName + ' 주문서';
   window.print();
-  // 인쇄 후 타이틀 원복
-  document.title = pharmName + ' - 디지털 가이드';
+  setTimeout(() => { document.title = pharmName + ' - 디지털 가이드'; }, 1000);
 }
 
 /* ── 실시간 주문 팝업 ── */
@@ -2493,6 +2589,7 @@ function closeOrderAlert() {
 }
 
 function reprintOrderAlert() {
+  if (_lastPrintedOrder) { autoPrintOrder(_lastPrintedOrder); return; }
   if (_currentOrderText) autoPrint(_currentOrderText);
 }
 
@@ -3226,6 +3323,7 @@ async function stopBarcodeCamera() {
 /* ─── 설정 ─── */
 function fillSettings() {
   $('#setting-name').value    = data.settings.pharmacyName || '';
+  $('#setting-phone').value   = data.settings.pharmacyPhone || '';
   $('#setting-tagline').value = data.settings.tagline || '';
   $('#setting-pin').value     = '';
   const ntfyEl = $('#ntfy-topic-display');
@@ -3245,8 +3343,9 @@ function fillSettings() {
   }
 }
 function saveSettings() {
-  data.settings.pharmacyName = $('#setting-name').value.trim() || '로컬 창고약국';
-  data.settings.tagline      = $('#setting-tagline').value.trim();
+  data.settings.pharmacyName  = $('#setting-name').value.trim() || '로컬 창고약국';
+  data.settings.pharmacyPhone = $('#setting-phone').value.trim();
+  data.settings.tagline       = $('#setting-tagline').value.trim();
   saveData();
   applyHeader();
   showToast('약국 정보가 저장되었습니다');
