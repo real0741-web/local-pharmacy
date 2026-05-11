@@ -51,6 +51,8 @@
   .tab-btn[data-active="true"] {
     background: var(--brand);
     color: white;
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.35);
+    transform: scale(1.04);
   }
   @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .slide-up { animation: slideUp .25s ease-out; }
@@ -1257,7 +1259,7 @@ function renderCategories() {
     sidebar.appendChild(btn);
 
     const tab = document.createElement('button');
-    tab.className = 'tab-btn shrink-0 px-4 py-2 rounded-full text-sm font-semibold border border-slate-200 bg-white text-slate-600';
+    tab.className = 'tab-btn shrink-0 px-4 py-2.5 rounded-full text-base font-bold border border-slate-200 bg-white text-slate-600';
     tab.dataset.active = (c.id === currentCat);
     tab.onclick = () => selectCategory(c.id);
     tab.innerHTML = `${c.emoji || '📂'} ${c.name}`;
