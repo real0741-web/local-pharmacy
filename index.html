@@ -1186,6 +1186,7 @@ function migrate(d) {
   return d;
 }
 function saveData() {
+  data._savedAt = Date.now(); // 저장 시각 기록 (덮어쓰기 방지용)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   // Cloudflare KV에 백그라운드 동기화
   fetch(`${PROXY}/?action=saveData`, {
@@ -3750,6 +3751,10 @@ async function tryLoadRemoteData() {
     if (!res.ok) return false;
     const remote = await res.json();
     if (!remote.categories || !remote.products) return false;
+    // ★ 타임스탬프 비교: KV가 로컬보다 오래됐으면 덮어쓰지 않음
+    const localTs  = data._savedAt  || 0;
+    const remoteTs = remote._savedAt || 0;
+    if (localTs > remoteTs) return false; // 내 로컬이 더 최신 → 유지
     data = migrate(remote);
     // 고객 기기 캐시도 최신으로 갱신
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
