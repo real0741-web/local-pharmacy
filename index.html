@@ -1245,10 +1245,26 @@ function renderCategories() {
     return;
   }
 
-  // currentCat이 삭제되었을 수도 있으니 보정
-  if (!data.categories.find(c => c.id === currentCat)) {
+  // currentCat이 삭제되었을 수도 있으니 보정 (ALL은 유효)
+  if (currentCat !== 'ALL' && !data.categories.find(c => c.id === currentCat)) {
     currentCat = data.categories[0].id;
   }
+
+  // ── 전체 보기 버튼 (사이드바) ──────────────────────────
+  const allBtn = document.createElement('button');
+  allBtn.className = 'cat-btn relative text-left flex items-center gap-3 px-3 py-3 rounded-xl text-slate-600';
+  allBtn.dataset.active = (currentCat === 'ALL');
+  allBtn.onclick = () => selectCategory('ALL');
+  allBtn.innerHTML = `<span class="text-xl">🏪</span><span class="text-sm">전체 보기</span>`;
+  sidebar.appendChild(allBtn);
+
+  // ── 전체 보기 탭 (모바일) ──────────────────────────────
+  const allTab = document.createElement('button');
+  allTab.className = 'tab-btn shrink-0 px-4 py-2.5 rounded-full text-base font-bold border border-slate-200 bg-white text-slate-600';
+  allTab.dataset.active = (currentCat === 'ALL');
+  allTab.onclick = () => selectCategory('ALL');
+  allTab.innerHTML = `🏪 전체`;
+  tabs.appendChild(allTab);
 
   data.categories.forEach(c => {
     const btn = document.createElement('button');
@@ -1297,6 +1313,22 @@ function renderProducts() {
       return;
     }
     renderProductCards(allMatched, grid);
+    return;
+  }
+
+  // ── 전체 보기 ───────────────────────────────────────────
+  if (currentCat === 'ALL') {
+    $('#cat-title').textContent = '🏪 전체 제품';
+    $('#cat-desc').textContent = '모든 분류의 제품을 한눈에 확인하세요';
+    const allList = data.products.filter(p => !p.hidden);
+    $('#cat-count').textContent = `총 ${allList.length}개`;
+    const grid = $('#product-grid');
+    grid.innerHTML = '';
+    if (allList.length === 0) {
+      grid.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400">등록된 제품이 없습니다.</div>`;
+      return;
+    }
+    renderProductCards(allList, grid);
     return;
   }
 
@@ -3746,19 +3778,30 @@ function deleteBundle(id) {
    localStorage 없는 고객 기기에서만 KV 데이터를 불러와 화면을 갱신.
    관리자 기기(localStorage 있음)는 건드리지 않아 최신 편집이 유지됨. */
 async function tryLoadRemoteData() {
-  // 관리자 기기(mode=admin)는 localStorage 우선 — KV로 덮어쓰지 않음
-  if (_adminUrlMode) return false;
   try {
     const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
     if (!res.ok) return false;
     const remote = await res.json();
     if (!remote.categories || !remote.products) return false;
-    // ★ 타임스탬프 비교: KV가 로컬보다 오래됐으면 덮어쓰지 않음
     const localTs  = data._savedAt  || 0;
     const remoteTs = remote._savedAt || 0;
-    if (localTs > remoteTs) return false; // 내 로컬이 더 최신 → 유지
+
+    // 관리자 기기: KV가 더 최신이면 (텔레그램 등록 등) 배너로 알림
+    if (_adminUrlMode) {
+      if (remoteTs > localTs) {
+        const newProds = remote.products.filter(
+          rp => !data.products.find(lp => lp.id === rp.id)
+        );
+        if (newProds.length > 0) {
+          showTelegramSyncBanner(newProds.length, remote);
+        }
+      }
+      return false;
+    }
+
+    // 고객 기기: KV가 오래됐으면 무시
+    if (localTs > remoteTs) return false;
     data = migrate(remote);
-    // 고객 기기 캐시도 최신으로 갱신
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     if (!data.categories.find(c => c.id === currentCat)) {
       currentCat = data.categories[0]?.id || 'hot';
@@ -3769,6 +3812,61 @@ async function tryLoadRemoteData() {
     renderSidebarBundleBtn();
     return true;
   } catch(e) { return false; }
+}
+
+// ── 텔레그램 신규 제품 알림 배너 ───────────────────────────
+function showTelegramSyncBanner(count, remoteData) {
+  const existing = document.getElementById('tg-sync-banner');
+  if (existing) existing.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'tg-sync-banner';
+  banner.style.cssText = `
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:#16a34a; color:white; padding:12px 20px; border-radius:16px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.25); z-index:9999;
+    display:flex; align-items:center; gap:12px; font-size:14px; font-weight:600;
+    max-width:340px; width:calc(100% - 32px);
+  `;
+  banner.innerHTML = `
+    <span>📲 텔레그램에서 ${count}개 제품이 추가됐어요!</span>
+    <button onclick="applyTelegramSync()" style="
+      background:white; color:#16a34a; border:none; border-radius:10px;
+      padding:6px 14px; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;
+    ">불러오기</button>
+    <button onclick="document.getElementById('tg-sync-banner').remove()" style="
+      background:transparent; color:rgba(255,255,255,0.8); border:none;
+      cursor:pointer; font-size:18px; line-height:1; padding:0 2px;
+    ">✕</button>
+  `;
+  document.body.appendChild(banner);
+
+  // 10초 후 자동 사라짐
+  setTimeout(() => banner.remove?.(), 10000);
+
+  // remoteData를 임시 보관
+  window._pendingRemoteData = remoteData;
+}
+
+function applyTelegramSync() {
+  if (!window._pendingRemoteData) return;
+  data = migrate(window._pendingRemoteData);
+  saveData();
+  if (!data.categories.find(c => c.id === currentCat)) {
+    currentCat = data.categories[0]?.id || 'hot';
+  }
+  applyHeader();
+  renderCategories();
+  renderProducts();
+  renderSidebarBundleBtn();
+  document.getElementById('tg-sync-banner')?.remove();
+  window._pendingRemoteData = null;
+  alert(`✅ 텔레그램에서 추가된 제품을 불러왔어요!`);
+}
+
+// ── 관리자 모드: 60초마다 KV 체크 (텔레그램 제품 감지) ─────
+if (_adminUrlMode) {
+  setInterval(() => tryLoadRemoteData(), 60000);
 }
 
 /* ─── 초기화 ─── */
