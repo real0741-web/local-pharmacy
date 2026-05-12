@@ -588,49 +588,111 @@
 
     <!-- QR 탭 -->
     <section id="tab-qr" class="admin-section hidden">
-      <h2 class="text-xl font-bold mb-1">QR 코드 생성</h2>
-      <p class="text-sm text-slate-500 mb-4">환자가 스캔할 QR 코드를 만듭니다. 이 페이지가 호스팅된 URL을 입력하세요.</p>
+      <h2 class="text-xl font-bold mb-1">QR 코드 관리</h2>
+      <p class="text-sm text-slate-500 mb-5">운영 방식을 단계별로 선택하세요.</p>
 
-      <div class="card p-5 max-w-2xl">
+      <!-- ① STEP 1: 운영 방식 -->
+      <div class="card p-5 max-w-2xl mb-4">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">STEP 1 · 운영 방식</div>
+        <div class="grid grid-cols-2 gap-3">
+          <button id="qr-type-single-btn" onclick="setQRType('single')"
+            class="flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors">
+            <span class="text-2xl">🆕</span>
+            <span class="font-bold text-sm">새 QR 생성</span>
+            <span class="text-xs text-slate-500 leading-snug">단순 링크 QR 하나를 만들어 인쇄합니다. 보안 제한 없음.</span>
+          </button>
+          <button id="qr-type-rotation-btn" onclick="setQRType('rotation')"
+            class="flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors">
+            <span class="text-2xl">🔄</span>
+            <span class="font-bold text-sm">QR 카드 순환</span>
+            <span class="text-xs text-slate-500 leading-snug">5장을 미리 인쇄하고 주기적으로 교체. 저장된 링크는 자동 차단.</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ② STEP 2: 순환 방식 (순환 선택 시만 표시) -->
+      <div id="qr-step2" class="card p-5 max-w-2xl mb-4 hidden">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">STEP 2 · 교체 방식</div>
+        <div class="grid grid-cols-2 gap-3">
+          <button id="qr-mode-auto-btn" onclick="setQRModeUI('auto')"
+            class="flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors">
+            <span class="text-2xl">⏰</span>
+            <span class="font-bold text-sm">자동 순환</span>
+            <span class="text-xs text-slate-500 leading-snug">N일마다 시스템이 자동으로 다음 QR로 넘어갑니다.</span>
+          </button>
+          <button id="qr-mode-manual-btn" onclick="setQRModeUI('manual')"
+            class="flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors">
+            <span class="text-2xl">✋</span>
+            <span class="font-bold text-sm">수동 교체</span>
+            <span class="text-xs text-slate-500 leading-snug">내가 원할 때 직접 번호를 바꿔 활성화합니다.</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ③ STEP 3-A: 자동 순환 설정 -->
+      <div id="qr-panel-auto" class="card p-5 max-w-2xl mb-4 hidden">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">STEP 3 · 자동 순환 설정</div>
+        <div class="field">
+          <label>교체 주기 (일)</label>
+          <div class="flex items-center gap-3">
+            <input id="qr-cycle-days" type="number" value="7" min="1" max="365" class="w-28" />
+            <span class="text-sm text-slate-500">일마다 QR1→2→3→4→5→1 자동 교체</span>
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer mb-4 mt-1">
+          <input id="qr-reset-epoch" type="checkbox" class="rounded" />
+          <span>오늘부터 카운트 다시 시작 <span class="text-slate-400">(저장 즉시 QR 1번이 활성화됨)</span></span>
+        </label>
+        <div id="qr-auto-status" class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-sm text-teal-700 mb-4 hidden"></div>
+        <div class="flex gap-2">
+          <button onclick="saveQRConfig()" class="btn-primary">💾 저장</button>
+          <button onclick="loadQRConfig()" class="btn-secondary text-sm">↺ 현재 상태 조회</button>
+        </div>
+      </div>
+
+      <!-- ③ STEP 3-B: 수동 교체 설정 -->
+      <div id="qr-panel-manual" class="card p-5 max-w-2xl mb-4 hidden">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">STEP 3 · 수동 교체 설정</div>
+        <div class="text-sm text-slate-600 mb-2">지금 활성화할 QR 번호를 선택하세요:</div>
+        <div class="flex gap-2 flex-wrap mb-4">
+          <button onclick="selectManualQR(1)" id="manual-qr-1" class="px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white">QR 1</button>
+          <button onclick="selectManualQR(2)" id="manual-qr-2" class="px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white">QR 2</button>
+          <button onclick="selectManualQR(3)" id="manual-qr-3" class="px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white">QR 3</button>
+          <button onclick="selectManualQR(4)" id="manual-qr-4" class="px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white">QR 4</button>
+          <button onclick="selectManualQR(5)" id="manual-qr-5" class="px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white">QR 5</button>
+        </div>
+        <div id="qr-manual-status" class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-sm text-teal-700 mb-4 hidden"></div>
+        <div class="flex gap-2">
+          <button onclick="saveQRConfig()" class="btn-primary">💾 저장 (지금 즉시 교체)</button>
+          <button onclick="loadQRConfig()" class="btn-secondary text-sm">↺ 현재 상태 조회</button>
+        </div>
+      </div>
+
+      <!-- ④ QR 코드 생성 (새 QR or 순환 공통) -->
+      <div id="qr-panel-generate" class="card p-5 max-w-2xl hidden">
+        <div id="qr-gen-title" class="font-bold mb-1">🔲 QR 코드 생성</div>
+        <p id="qr-gen-desc" class="text-sm text-slate-500 mb-4"></p>
         <div class="field">
           <label>웹페이지 URL</label>
-          <input id="qr-url" type="text" placeholder="https://my-pharmacy.example.com" />
+          <input id="qr-base-url" type="text" placeholder="https://my-pharmacy.example.com" />
           <div class="text-xs text-slate-400 mt-1">예: https://real0741-web.github.io/local-pharmacy/</div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-3 mb-3">
           <div class="field">
             <label>크기 (px)</label>
-            <input id="qr-size" type="number" value="320" min="100" max="1024" />
+            <input id="qr-size" type="number" value="240" min="100" max="512" />
           </div>
           <div class="field">
             <label>여백</label>
             <select id="qr-margin">
-              <option value="20">표준</option>
-              <option value="40">크게</option>
+              <option value="16">표준</option>
+              <option value="32">크게</option>
               <option value="0">없음</option>
             </select>
           </div>
         </div>
-        <div class="p-3 rounded-xl bg-teal-50 border border-teal-100 text-xs text-teal-700 leading-relaxed">
-          <span class="font-bold">⏱️ 세션 만료 방식</span><br/>
-          고객이 QR을 스캔하면 <b>1시간</b> 동안 가격이 표시됩니다.<br/>
-          탭을 닫거나 1시간이 지나면 자동으로 만료되며, 다시 스캔해야 새 세션이 시작됩니다.<br/>
-          QR URL 자체는 단순 링크여도 됩니다.
-        </div>
-        <div class="flex gap-2">
-          <button onclick="generateQR()" class="btn-primary">QR 코드 생성</button>
-          <button onclick="downloadQR()" class="btn-secondary">PNG 다운로드</button>
-        </div>
-
-        <div id="qr-preview" class="mt-5 flex flex-col items-center"></div>
-
-        <div class="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-100 text-sm leading-relaxed">
-          <div class="font-bold mb-1">💡 QR 배치 팁</div>
-          <div class="text-slate-600">
-            의자 옆 사이드 테이블, 처방전 접수증 뒷면, 투약대 앞 거치대 등에 부착하세요.
-            "<b>대기하시는 동안 스마트폰으로 약국을 둘러보세요</b>"라는 안내 문구를 함께 두면 스캔률이 올라갑니다.
-          </div>
-        </div>
+        <button id="qr-gen-btn" onclick="generateAllQRs()" class="btn-primary mb-4">🔲 QR 코드 생성</button>
+        <div id="qr-grid" class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));"></div>
       </div>
     </section>
 
@@ -1052,13 +1114,13 @@
   </div>
 </div>
 
-<!-- 세션 만료 오버레이 -->
+<!-- 세션 만료 / QR 불일치 오버레이 -->
 <div id="closed-overlay" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex flex-col items-center justify-center text-white p-8">
-  <div class="text-6xl mb-4">⏱️</div>
-  <div class="text-2xl font-bold mb-2">열람 시간이 만료됐어요</div>
-  <div class="text-slate-400 text-center text-sm leading-relaxed">
+  <div id="closed-overlay-icon" class="text-6xl mb-4">⏱️</div>
+  <div id="closed-overlay-title" class="text-2xl font-bold mb-2">열람 시간이 만료됐어요</div>
+  <div id="closed-overlay-msg" class="text-slate-400 text-center text-sm leading-relaxed">
     가격 정보는 접속 후 1시간 동안만 표시됩니다.<br/>
-    약국 내 QR 코드를 다시 스캔하면<br/>새로운 30분이 시작됩니다.
+    약국 내 QR 코드를 다시 스캔하면 새 세션이 시작됩니다.
   </div>
 </div>
 
@@ -1452,6 +1514,10 @@ function changeQty(id, delta) {
   if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
   updateCartUI();
 }
+function removeFromCart(id) {
+  cart = cart.filter(c => c.id !== id);
+  updateCartUI();
+}
 function updateCartUI() {
   const totalQty = cart.reduce((s, c) => s + c.qty, 0);
   $('#cart-badge').textContent = totalQty;
@@ -1463,16 +1529,19 @@ function updateCartUI() {
       const p = data.products.find(pp => pp.id === c.id);
       if (!p) return '';
       return `
-        <div class="flex items-center gap-3 py-3 border-b border-slate-100 last:border-0">
-          <div class="w-12 h-12 rounded-lg img-ph text-2xl shrink-0">${p.emoji || '📦'}</div>
+        <div class="flex items-center gap-2 py-3 border-b border-slate-100 last:border-0">
+          <div class="w-11 h-11 rounded-lg img-ph text-2xl shrink-0">${p.emoji || '📦'}</div>
           <div class="flex-1 min-w-0">
             <div class="text-sm font-semibold leading-tight line-clamp-1">${p.name}</div>
             <div class="text-xs text-slate-500 mt-0.5">${fmt(p.price)}</div>
           </div>
-          <div class="flex items-center gap-1.5">
-            <button onclick="changeQty('${c.id}', -1)" class="w-7 h-7 rounded-full bg-slate-100">−</button>
-            <span class="w-6 text-center text-sm font-semibold">${c.qty}</span>
-            <button onclick="changeQty('${c.id}', 1)" class="w-7 h-7 rounded-full bg-slate-100">+</button>
+          <div class="flex items-center gap-1">
+            <button onclick="changeQty('${c.id}', -1)" class="w-7 h-7 rounded-full bg-slate-100 text-base leading-none">−</button>
+            <span class="w-7 text-center text-sm font-semibold">${c.qty}</span>
+            <button onclick="changeQty('${c.id}', 1)" class="w-7 h-7 rounded-full bg-slate-100 text-base leading-none">+</button>
+            <button onclick="removeFromCart('${c.id}')"
+              class="w-7 h-7 rounded-full bg-red-50 text-red-400 text-sm ml-1 leading-none"
+              title="항목 삭제">🗑</button>
           </div>
         </div>`;
     }).join('');
@@ -2402,54 +2471,259 @@ function saveProduct() {
   saveData(); closeProductEditor(); renderAdminProducts();
 }
 
-/* ─── QR 코드 생성 ─── */
-let qrInstance = null;
+/* ─── QR 코드 관리 (마법사 UI) ─── */
+
+let _qrConfig = { mode: 'auto', activeQR: 1, cycleDays: 7, epochStart: Date.now() };
+let _qrSelectedManual = 1;
+let _qrType = '';  // 'single' | 'rotation'
+
+// QR 탭 열릴 때 호출
 function setQRDefault() {
-  if (!$('#qr-url').value) {
-    if (location.protocol === 'file:') {
-      $('#qr-url').placeholder = 'file:// 로 열려있어요. 호스팅 URL을 입력해주세요';
-    } else {
-      $('#qr-url').value = location.origin + location.pathname;
-    }
+  const baseEl = $('#qr-base-url');
+  if (baseEl && !baseEl.value) {
+    baseEl.value = location.protocol === 'file:' ? '' : (location.origin + location.pathname);
   }
-  generateQR();
 }
-function buildTimedQRUrl(baseUrl) {
-  // 더 이상 시간 파라미터 삽입 안 함 — sessionStorage로 세션 관리
-  return baseUrl.trim();
+
+// ─ STEP 1: 운영 방식 선택
+function setQRType(type) {
+  _qrType = type;
+
+  const singleBtn   = $('#qr-type-single-btn');
+  const rotationBtn = $('#qr-type-rotation-btn');
+  const on  = 'flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-teal-500 bg-teal-50 text-left transition-colors';
+  const off = 'flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors';
+
+  if (type === 'single') {
+    singleBtn.className   = on;
+    rotationBtn.className = off;
+    $('#qr-step2').classList.add('hidden');
+    $('#qr-panel-auto').classList.add('hidden');
+    $('#qr-panel-manual').classList.add('hidden');
+    // 생성 패널: 단일 QR 설명으로
+    const genPanel = $('#qr-panel-generate');
+    genPanel.classList.remove('hidden');
+    $('#qr-gen-title').textContent = '🆕 QR 코드 생성';
+    $('#qr-gen-desc').textContent  = 'URL을 입력하고 QR 코드를 생성하세요. 단순 링크 QR입니다.';
+    $('#qr-gen-btn').textContent   = '🔲 QR 코드 생성';
+    _qrConfig.mode = 'single';
+  } else {
+    rotationBtn.className = on;
+    singleBtn.className   = off;
+    $('#qr-step2').classList.remove('hidden');
+    // 생성 패널: 5장 설명으로 (모드 선택 후 표시)
+    const genPanel = $('#qr-panel-generate');
+    genPanel.classList.remove('hidden');
+    $('#qr-gen-title').textContent = '🖨️ QR 카드 5장 생성';
+    $('#qr-gen-desc').textContent  = '5장을 미리 인쇄해 번호를 매겨 보관하세요. 교체 시기가 되면 해당 번호 카드를 꺼내 부착하면 됩니다.';
+    $('#qr-gen-btn').textContent   = '🔲 5장 QR 코드 생성';
+    // Worker에서 현재 설정 로드
+    loadQRConfig();
+  }
 }
-function generateQR() {
-  const url  = $('#qr-url').value.trim();
-  const size = Math.max(100, Math.min(1024, Number($('#qr-size').value) || 320));
-  const margin = Number($('#qr-margin').value) || 0;
-  const wrap = $('#qr-preview');
-  wrap.innerHTML = '';
-  if (!url) {
-    wrap.innerHTML = `<div class="text-sm text-slate-400 py-8">URL을 입력하면 QR 코드가 만들어집니다</div>`;
+
+// ─ STEP 2: 교체 방식 선택 (순환 시)
+function setQRModeUI(mode) {
+  _qrConfig.mode = mode;
+
+  const autoBtn   = $('#qr-mode-auto-btn');
+  const manualBtn = $('#qr-mode-manual-btn');
+  const on  = 'flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-teal-500 bg-teal-50 text-left transition-colors';
+  const off = 'flex flex-col items-start gap-1.5 p-4 rounded-xl border-2 border-slate-200 text-left hover:border-teal-400 transition-colors';
+
+  if (mode === 'auto') {
+    autoBtn.className   = on;
+    manualBtn.className = off;
+    $('#qr-panel-auto').classList.remove('hidden');
+    $('#qr-panel-manual').classList.add('hidden');
+  } else {
+    manualBtn.className = on;
+    autoBtn.className   = off;
+    $('#qr-panel-manual').classList.remove('hidden');
+    $('#qr-panel-auto').classList.add('hidden');
+    // 현재 활성 QR 하이라이트
+    selectManualQR(_qrConfig.activeQR || _qrSelectedManual || 1);
+  }
+}
+
+// ─ 수동 모드: QR 번호 선택
+function selectManualQR(n) {
+  _qrSelectedManual = n;
+  _qrConfig.activeQR = n;
+  for (let i = 1; i <= 5; i++) {
+    const btn = document.getElementById(`manual-qr-${i}`);
+    if (!btn) continue;
+    btn.className = i === n
+      ? 'px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-teal-500 text-teal-700 bg-teal-50'
+      : 'px-5 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-500 bg-white';
+  }
+  _setStatusBox('manual', `QR ${n}번 선택됨 — 저장 버튼을 눌러야 실제로 적용됩니다.`, 'pending');
+}
+
+// ─ 상태 박스 표시 헬퍼
+function _setStatusBox(target, text, type) {
+  const id = target === 'auto' ? 'qr-auto-status' : 'qr-manual-status';
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
+  const styles = {
+    ok:      'p-3 rounded-xl bg-teal-50 border border-teal-100 text-sm text-teal-700 mb-4',
+    pending: 'p-3 rounded-xl bg-amber-50 border border-amber-100 text-sm text-amber-700 mb-4',
+    error:   'p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 mb-4',
+  };
+  el.className = styles[type] || styles.pending;
+}
+
+// ─ Worker에서 QR 설정 불러오기
+async function loadQRConfig() {
+  const target = _qrConfig.mode === 'manual' ? 'manual' : 'auto';
+  _setStatusBox(target, '⏳ Worker에서 현재 설정 조회 중...', 'pending');
+  try {
+    const res = await fetch(`${PROXY}/?action=getQRConfig`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const cfg = await res.json();
+    _qrConfig = cfg;
+    _qrSelectedManual = cfg.activeQR || 1;
+
+    // 모드에 맞게 UI 업데이트
+    if (cfg.mode !== 'single') setQRModeUI(cfg.mode || 'auto');
+    const cycleDaysEl = document.getElementById('qr-cycle-days');
+    if (cycleDaysEl) cycleDaysEl.value = cfg.cycleDays || 7;
+
+    const active = cfg.activeNow || 1;
+    const modeLabel = cfg.mode === 'manual' ? '수동' : '자동';
+
+    if (cfg.mode === 'auto') {
+      const epochMs   = cfg.epochStart || Date.now();
+      const cycleMs   = (cfg.cycleDays || 7) * 86400 * 1000;
+      const remaining = cycleMs - ((Date.now() - epochMs) % cycleMs);
+      const remDays   = Math.floor(remaining / 86400000);
+      const remHours  = Math.floor((remaining % 86400000) / 3600000);
+      const nextQR    = (active % 5) + 1;
+      _setStatusBox('auto',
+        `✅ 현재 활성: QR ${active}번 (자동 모드, ${cfg.cycleDays}일 주기)\n다음 교체(QR ${nextQR}번): ${remDays}일 ${remHours}시간 후`,
+        'ok');
+    } else {
+      selectManualQR(active);
+      _setStatusBox('manual', `✅ 현재 활성: QR ${active}번 (수동 모드)`, 'ok');
+    }
+  } catch(e) {
+    const target2 = (_qrConfig?.mode === 'manual') ? 'manual' : 'auto';
+    _setStatusBox(target2, `⚠️ Worker 연결 실패: ${e.message}`, 'error');
+  }
+}
+
+// ─ Worker에 QR 설정 저장
+async function saveQRConfig() {
+  const target     = _qrConfig.mode === 'manual' ? 'manual' : 'auto';
+  const cycleDays  = Math.max(1, parseInt(document.getElementById('qr-cycle-days')?.value || '7', 10));
+  const resetEpoch = document.getElementById('qr-reset-epoch')?.checked || false;
+
+  _setStatusBox(target, '⏳ 저장 중...', 'pending');
+  try {
+    const body = {
+      mode:       _qrConfig.mode === 'manual' ? 'manual' : 'auto',
+      activeQR:   _qrConfig.mode === 'manual' ? (_qrSelectedManual || 1) : 1,
+      cycleDays:  cycleDays,
+      resetEpoch: resetEpoch,
+    };
+    const res = await fetch(`${PROXY}/?action=setQRConfig`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const result = await res.json();
+    _qrConfig = result.config;
+
+    const resetEl = document.getElementById('qr-reset-epoch');
+    if (resetEl) resetEl.checked = false;
+
+    const active = result.activeNow || result.config.activeQR || 1;
+    _setStatusBox(target, `✅ 저장 완료! 현재 활성 QR: ${active}번`, 'ok');
+    showToast(`✅ QR ${active}번 활성화됨`);
+    // QR 그리드 다시 그리기 (활성 표시 업데이트)
+    if ($('#qr-base-url')?.value) generateAllQRs();
+  } catch(e) {
+    _setStatusBox(target, `❌ 저장 실패: ${e.message}`, 'error');
+  }
+}
+
+// ─ QR 코드 일괄 생성 (단일 or 5장)
+const _qrInstances = {};
+function generateAllQRs() {
+  const base   = (document.getElementById('qr-base-url')?.value || '').trim();
+  const size   = Math.max(100, Math.min(512, Number(document.getElementById('qr-size')?.value) || 240));
+  const margin = Number(document.getElementById('qr-margin')?.value) || 16;
+  const grid   = document.getElementById('qr-grid');
+  if (!grid) return;
+
+  if (!base) {
+    grid.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 text-center">URL을 먼저 입력해주세요</div>`;
     return;
   }
-  const inner = document.createElement('div');
-  inner.style.cssText = `padding:${margin}px;background:white;border-radius:12px;border:1px solid var(--line)`;
-  wrap.appendChild(inner);
-  qrInstance = new QRCode(inner, {
-    text: url, width: size, height: size,
-    colorDark: '#0f172a', colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.M,
-  });
-  const caption = document.createElement('div');
-  caption.className = 'text-xs text-slate-500 mt-3 break-all max-w-full text-center';
-  caption.textContent = url;
-  wrap.appendChild(caption);
+  grid.innerHTML = '';
+  Object.keys(_qrInstances).forEach(k => delete _qrInstances[k]);
+
+  const isSingle   = (_qrType === 'single');
+  const count      = isSingle ? 1 : 5;
+  const activeSlot = _qrConfig.activeNow || _qrConfig.activeQR || 1;
+
+  for (let i = 1; i <= count; i++) {
+    let qrUrl;
+    if (isSingle) {
+      qrUrl = base;  // 단일: 파라미터 없이 그대로
+    } else {
+      try {
+        const u = new URL(base);
+        u.searchParams.set('qr', String(i));
+        qrUrl = u.toString();
+      } catch(_) {
+        qrUrl = `${base}${base.includes('?') ? '&' : '?'}qr=${i}`;
+      }
+    }
+
+    const isActive = isSingle || (i === activeSlot);
+    const card = document.createElement('div');
+    card.className = `flex flex-col items-center p-4 rounded-xl border-2 ${isActive ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'}`;
+    const label = isSingle ? 'QR 코드' : `QR ${i}번`;
+    const activeBadge = isActive && !isSingle
+      ? '<span class="text-xs px-2 py-0.5 rounded-full bg-teal-500 text-white font-bold ml-1">현재 활성</span>' : '';
+    card.innerHTML = `
+      <div class="flex items-center gap-1 mb-2">
+        <span class="font-bold text-sm ${isActive ? 'text-teal-700' : 'text-slate-600'}">${label}</span>${activeBadge}
+      </div>
+      <div id="qr-slot-${i}" style="padding:${margin}px;background:white;border-radius:8px;border:1px solid #e2e8f0"></div>
+      <div class="text-xs text-slate-400 mt-2 break-all text-center max-w-[200px]">${qrUrl}</div>
+      <button onclick="downloadQRSlot(${i})" class="btn-secondary mt-2 text-xs py-1.5 px-3">⬇ PNG 저장</button>`;
+    grid.appendChild(card);
+
+    const slot = document.getElementById(`qr-slot-${i}`);
+    _qrInstances[i] = new QRCode(slot, {
+      text: qrUrl, width: size, height: size,
+      colorDark: isActive ? '#0f766e' : '#0f172a',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  }
 }
-function downloadQR() {
-  const img = $('#qr-preview img') || $('#qr-preview canvas');
-  if (!img) { alert('먼저 QR 코드를 생성해주세요'); return; }
+
+function downloadQRSlot(num) {
+  const slot = document.getElementById(`qr-slot-${num}`);
+  if (!slot) return;
+  const img = slot.querySelector('img') || slot.querySelector('canvas');
+  if (!img) { showToast('QR 이미지를 찾을 수 없어요'); return; }
   const dataUrl = img.tagName === 'IMG' ? img.src : img.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `pharmacy-qr-${Date.now()}.png`;
+  a.download = `pharmacy-qr-${num}.png`;
   a.click();
 }
+
+// 하위 호환
+function generateQR() { generateAllQRs(); }
+function downloadQR()  { downloadQRSlot(1); }
 
 /* ─── 관리자 실시간 주문 수신 (ntfy.sh SSE) + 미수신 주문함 ─── */
 let _orderEvtSource = null;
@@ -2665,27 +2939,87 @@ function reprintOrderAlert() {
 const SESSION_MINUTES = 60;
 window._qrPriceVisible = false;
 
-function _expireSession() {
+function _expireSession(reason) {
   window._qrPriceVisible = false;
   renderProducts();
   const overlay = document.getElementById('closed-overlay');
-  if (overlay) overlay.classList.remove('hidden');
-}
-function checkQRValidity() {
-  if (isAdmin) { window._qrPriceVisible = true; return; }
-  let sessionStart = sessionStorage.getItem('pharm_session_ts');
-  if (!sessionStart) {
-    sessionStart = String(Date.now());
-    sessionStorage.setItem('pharm_session_ts', sessionStart);
-  }
-  const ageMs  = Date.now() - parseInt(sessionStart, 10);
-  const limitMs = SESSION_MINUTES * 60 * 1000;
-  if (ageMs >= limitMs) {
-    _expireSession();
+  if (!overlay) return;
+  if (reason === 'invalid_qr') {
+    document.getElementById('closed-overlay-icon').textContent  = '🚫';
+    document.getElementById('closed-overlay-title').textContent = '유효하지 않은 QR입니다';
+    document.getElementById('closed-overlay-msg').textContent   =
+      '현재 사용 중인 QR 카드가 아닙니다.\n약국에 비치된 최신 QR 코드를 다시 스캔해 주세요.';
   } else {
-    window._qrPriceVisible = true;
-    clearTimeout(window._sessionExpireTimer);
-    window._sessionExpireTimer = setTimeout(_expireSession, limitMs - ageMs);
+    document.getElementById('closed-overlay-icon').textContent  = '⏱️';
+    document.getElementById('closed-overlay-title').textContent = '열람 시간이 만료됐어요';
+    document.getElementById('closed-overlay-msg').textContent   =
+      '가격 정보는 접속 후 1시간 동안만 표시됩니다.\n약국 내 QR 코드를 다시 스캔하면 새 세션이 시작됩니다.';
+  }
+  overlay.classList.remove('hidden');
+}
+
+function _startSession() {
+  window._qrPriceVisible = true;
+  renderProducts();
+  clearTimeout(window._sessionExpireTimer);
+  const limitMs = SESSION_MINUTES * 60 * 1000;
+  const sessionStart = parseInt(sessionStorage.getItem('pharm_session_ts') || String(Date.now()), 10);
+  const elapsed = Date.now() - sessionStart;
+  const remaining = Math.max(0, limitMs - elapsed);
+  window._sessionExpireTimer = setTimeout(() => _expireSession('expired'), remaining);
+}
+
+async function checkQRValidity() {
+  if (isAdmin) { window._qrPriceVisible = true; return; }
+
+  // URL에서 ?qr=N 파라미터 확인
+  const urlParams  = new URLSearchParams(location.search);
+  const qrNumStr   = urlParams.get('qr');
+  const qrNum      = qrNumStr ? parseInt(qrNumStr, 10) : 0;
+
+  // QR 파라미터가 없으면 → 가격 숨김 (직접 URL 접근 차단)
+  if (!qrNum || isNaN(qrNum) || qrNum < 1 || qrNum > 5) {
+    window._qrPriceVisible = false;
+    return;
+  }
+
+  // 이미 이 QR로 유효한 세션이 있으면 재검증 없이 통과
+  const storedQR    = sessionStorage.getItem('pharm_qr_num');
+  const sessionStart = sessionStorage.getItem('pharm_session_ts');
+  if (storedQR === String(qrNum) && sessionStart) {
+    const ageMs   = Date.now() - parseInt(sessionStart, 10);
+    const limitMs = SESSION_MINUTES * 60 * 1000;
+    if (ageMs < limitMs) {
+      _startSession();
+      return;
+    }
+    // 세션 만료
+    sessionStorage.removeItem('pharm_qr_num');
+    sessionStorage.removeItem('pharm_session_ts');
+    _expireSession('expired');
+    return;
+  }
+
+  // Worker에 유효성 검사 요청
+  try {
+    const res = await fetch(`${PROXY}/?action=validateQR&qr=${qrNum}`);
+    if (!res.ok) throw new Error('network');
+    const { valid } = await res.json();
+    if (valid) {
+      // 새 세션 시작
+      sessionStorage.setItem('pharm_qr_num', String(qrNum));
+      sessionStorage.setItem('pharm_session_ts', String(Date.now()));
+      _startSession();
+    } else {
+      _expireSession('invalid_qr');
+    }
+  } catch(_) {
+    // Worker 연결 실패 시 — 세션이 있으면 허용, 없으면 숨김 유지
+    if (sessionStart) {
+      _startSession();
+    } else {
+      window._qrPriceVisible = false;
+    }
   }
 }
 
@@ -3935,7 +4269,9 @@ if (_adminUrlMode) {
     setTimeout(() => openAdminLogin(), 300);
   }
 } else {
-  checkQRValidity();
+  checkQRValidity().then(() => {
+    renderProducts(); // QR 검증 후 가격 표시 여부 반영
+  });
 }
 
 applyHeader();
