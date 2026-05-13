@@ -3857,4 +3857,278 @@ function fillSettings() {
   const key = data.settings.mfdsApiKey || '';
   $('#setting-mfds-key').value = key;
   const statusEl = $('#mfds-key-status');
-  if
+  if39,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.ITF,
+        ],
+      },
+      (decodedText) => {
+        const code = decodedText.replace(/\D/g, '');
+        if (code) {
+          $('#barcode-input').value = code;
+          stopBarcodeCamera();
+          lookupBarcode();
+        }
+      },
+      () => {}
+    );
+  } catch(e) {
+    showToast('카메라를 열 수 없습니다: ' + e.message);
+    $('#barcode-camera-wrap').classList.add('hidden');
+  }
+}
+
+async function stopBarcodeCamera() {
+  if (_html5QrCode) {
+    try {
+      if (_html5QrCode.isScanning) await _html5QrCode.stop();
+      _html5QrCode.clear();
+    } catch(e) { console.warn('카메라 종료 오류:', e); }
+    _html5QrCode = null;
+  }
+  const wrap = $('#barcode-camera-wrap');
+  if (wrap) wrap.classList.add('hidden');
+}
+
+/* ─── 설정 ─── */
+function fillSettings() {
+  if ($('#setting-name'))    $('#setting-name').value    = data.settings.pharmacyName || '';
+  if ($('#setting-phone'))   $('#setting-phone').value   = data.settings.pharmacyPhone || '';
+  if ($('#setting-tagline')) $('#setting-tagline').value = data.settings.tagline || '';
+  if ($('#setting-pin'))     $('#setting-pin').value     = '';
+  const ntfyEl = $('#ntfy-topic-display');
+  if (ntfyEl) ntfyEl.textContent = getNtfyTopic();
+  const deliveryEl = $('#setting-allow-delivery');
+  if (deliveryEl) deliveryEl.checked = !!data.settings.allowDelivery;
+  const pm = data.settings.payMethods || {};
+  if ($('#pay-toggle-kakao')) $('#pay-toggle-kakao').checked = !!pm.kakao;
+  if ($('#pay-toggle-naver')) $('#pay-toggle-naver').checked = !!pm.naver;
+  if ($('#pay-toggle-toss'))  $('#pay-toggle-toss').checked  = !!pm.toss;
+  const key = data.settings.mfdsApiKey || '';
+  if ($('#setting-mfds-key')) $('#setting-mfds-key').value = key;
+  const statusEl = $('#mfds-key-status');
+  if (statusEl) {
+    statusEl.textContent = key ? '✅ 등록됨 · 앞 8자: ' + key.slice(0, 8) + '***' : '미등록';
+    statusEl.style.color = key ? '#0f766e' : '#94a3b8';
+  }
+}
+
+function saveSettings() {
+  const name = ($('#setting-name')?.value || '').trim();
+  if (!name) { showToast('약국 이름을 입력해주세요'); return; }
+  data.settings.pharmacyName  = name;
+  data.settings.pharmacyPhone = ($('#setting-phone')?.value || '').trim();
+  data.settings.tagline       = ($('#setting-tagline')?.value || '').trim();
+  saveData();
+  applyHeader();
+  showToast('✅ 약국 정보 저장 완료');
+}
+
+function saveDeliveryToggle() {
+  data.settings.allowDelivery = !!$('#setting-allow-delivery')?.checked;
+  saveData();
+  showToast('✅ 수령 방법 저장됨');
+}
+
+function savePayMethods() {
+  data.settings.payMethods = {
+    kakao:   !!$('#pay-toggle-kakao')?.checked,
+    naver:   !!$('#pay-toggle-naver')?.checked,
+    toss:    !!$('#pay-toggle-toss')?.checked,
+    counter: true,
+  };
+  saveData();
+  showToast('✅ 결제 수단 저장됨');
+}
+
+function saveMfdsKey() {
+  const key = ($('#setting-mfds-key')?.value || '').trim();
+  data.settings.mfdsApiKey = key;
+  saveData();
+  fillSettings();
+  showToast(key ? '✅ API 키 저장됨' : '⚠️ API 키가 삭제됐습니다');
+}
+
+function changePin() {
+  const newPin = ($('#setting-pin')?.value || '').trim();
+  if (!newPin) { showToast('새 PIN을 입력해주세요'); return; }
+  if (!/^\d{4,8}$/.test(newPin)) { showToast('PIN은 숫자 4~8자리로 입력해주세요'); return; }
+  data.settings.adminPin = newPin;
+  saveData();
+  if ($('#setting-pin')) $('#setting-pin').value = '';
+  showToast('✅ PIN이 변경됐습니다');
+}
+
+function copyNtfyTopic() {
+  const topic = getNtfyTopic();
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(topic)
+      .then(() => showToast('✅ 코드 복사됨'))
+      .catch(() => showToast('복사 실패 — 직접 선택 후 복사하세요'));
+  } else {
+    showToast('현재 환경에서 복사 기능을 지원하지 않습니다');
+  }
+}
+
+function exportDataJson() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pharmacy-data-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  showToast('📦 data.json 다운로드 시작');
+}
+
+function exportData() { exportDataJson(); }
+
+function importData(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (!imported || typeof imported !== 'object') throw new Error('올바른 JSON이 아닙니다');
+      data = migrate(imported);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      currentCat = data.categories[0]?.id || 'hot';
+      applyHeader();
+      renderCategories();
+      renderProducts();
+      renderSidebarBundleBtn();
+      showToast('✅ 데이터 불러오기 완료!');
+    } catch(err) {
+      showToast('❌ 파일 오류: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  e.target.value = '';
+}
+
+async function syncFromRemote() {
+  showToast('☁️ 원격에서 불러오는 중...');
+  try {
+    const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const remote = await res.json();
+    if (!remote || remote.error) throw new Error('서버에 저장된 데이터가 없습니다');
+    data = migrate(remote);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    currentCat = data.categories[0]?.id || 'hot';
+    applyHeader();
+    renderCategories();
+    renderProducts();
+    renderSidebarBundleBtn();
+    showToast('✅ 원격 동기화 완료!');
+  } catch(err) {
+    showToast('❌ 동기화 실패: ' + err.message);
+  }
+}
+
+function resetData() {
+  if (!confirm('정말 모든 데이터를 기본값으로 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  currentCat = data.categories[0]?.id || 'hot';
+  applyHeader();
+  renderCategories();
+  renderProducts();
+  renderSidebarBundleBtn();
+  showToast('✅ 기본값으로 초기화됐습니다');
+}
+
+/* ─── 텔레그램 웹훅 ─── */
+async function registerTelegramWebhook() {
+  const statusEl = $('#webhook-status');
+  if (statusEl) { statusEl.textContent = '⏳ 등록 중...'; statusEl.style.color = '#64748b'; }
+  try {
+    const res = await fetch(`${PROXY}/?action=registerWebhook`, { method: 'POST' });
+    const json = await res.json();
+    if (json.ok || json.result) {
+      if (statusEl) { statusEl.textContent = '✅ 웹훅 등록 완료'; statusEl.style.color = '#0f766e'; }
+      showToast('✅ 텔레그램 웹훅 등록됨');
+    } else {
+      throw new Error(json.description || '등록 실패');
+    }
+  } catch(err) {
+    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
+    showToast('❌ 웹훅 등록 실패: ' + err.message);
+  }
+}
+
+async function checkTelegramWebhook() {
+  const statusEl = $('#webhook-status');
+  if (statusEl) { statusEl.textContent = '⏳ 확인 중...'; statusEl.style.color = '#64748b'; }
+  try {
+    const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
+    const json = await res.json();
+    const url = json.result?.url || '(미등록)';
+    if (statusEl) { statusEl.textContent = '웹훅 URL: ' + url; statusEl.style.color = '#0f766e'; }
+  } catch(err) {
+    if (statusEl) { statusEl.textContent = '❌ 확인 실패'; statusEl.style.color = '#dc2626'; }
+  }
+}
+
+async function deleteTelegramWebhook() {
+  if (!confirm('웹훅을 해제하시겠습니까?')) return;
+  const statusEl = $('#webhook-status');
+  try {
+    const res = await fetch(`${PROXY}/?action=deleteWebhook`, { method: 'POST' });
+    const json = await res.json();
+    if (json.ok) {
+      if (statusEl) { statusEl.textContent = '✅ 웹훅 해제됨'; statusEl.style.color = '#64748b'; }
+      showToast('✅ 웹훅 해제됨');
+    } else {
+      throw new Error(json.description || '해제 실패');
+    }
+  } catch(err)  } catch(err) {
+    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
+    showToast('❌ 웹훅 해제 실패: ' + err.message);
+  }
+}
+
+/* ─── 페이지 초기화 ─────────────────────────────────────────────── */
+applyHeader();
+renderCategories();
+renderProducts();
+renderSidebarBundleBtn();
+
+if (_adminUrlMode) openAdminLogin();
+else if (sessionStorage.getItem('pharm_admin_session')) enterAdmin();
+
+checkQRValidity();
+
+/* localStorage가 비어있거나 기본값이면 Cloudflare KV에서 자동 복구 시도 */
+(async () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // 커스텀 PIN이나 제품이 있으면 복구 불필요
+      if (parsed.settings && (parsed.settings.adminPin !== DEFAULT_DATA.settings.adminPin
+          || (parsed.products && parsed.products.length > DEFAULT_DATA.products.length))) {
+        return;
+      }
+    }
+    // 기본값 상태이면 KV에서 복구 시도
+    const res = await fetch(PROXY + '/?action=getData', { cache: 'no-store' });
+    if (!res.ok) return;
+    const restored = await res.json();
+    if (!restored || restored.error || !restored.settings) return;
+    if (restored.settings.adminPin === DEFAULT_DATA.settings.adminPin
+        && (!restored.products || restored.products.length <= DEFAULT_DATA.products.length)) return;
+    data = migrate(restored);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    currentCat = data.categories[0]?.id || 'hot';
+    applyHeader();
+    renderCategories();
+    renderProducts();
+    renderSidebarBundleBtn();
+    showToast('✅ 클라우드 백업에서 자동 복구됨!');
+  } catch(e) {
+    console.warn('KV 자동 복구 실패:', e);
+  }
+})();
+</script>
+</body>
+</html>
