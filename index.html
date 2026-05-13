@@ -2666,9 +2666,44 @@ function _buildQRUrl(base, slotNum) {
   }
 }
 
-// ─ QR 코드 일괄 생성 (단일 or 5장) — 미리보기는 300px 고정, 다운로드는 사용자 설정 크기
-const _qrUrls = {};  // { slotNum: url }
-const PREVIEW_SIZE = 260;  // 카드 내 미리보기 고정 크기
+// ─ qrcodejs 오프스크린 캔버스 생성 헬퍼 (다운로드용)
+function _makeQRCanvas(url, size, darkColor) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:-9999px;visibility:hidden';
+  document.body.appendChild(wrap);
+  new QRCode(wrap, {
+    text: url, width: size, height: size,
+    colorDark: darkColor || '#0f172a', colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+  const canvas = wrap.querySelector('canvas');
+  document.body.removeChild(wrap);
+  return canvas;
+}
+
+// ─ canvas 픽셀→벡터 SVG (수평 런 병합, 완전 확대 무손실)
+function _canvasToSVG(canvas, darkColor) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const px = ctx.getImageData(0, 0, w, h).data;
+  let d = '';
+  for (let y = 0; y < h; y++) {
+    let rx = -1;
+    for (let x = 0; x <= w; x++) {
+      const dark = x < w && px[(y * w + x) * 4] < 128;
+      if (dark && rx < 0) { rx = x; }
+      else if (!dark && rx >= 0) { d += `M${rx},${y}H${x}V${y+1}H${rx}Z`; rx = -1; }
+    }
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>`
+    + `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">`
+    + `<rect width="${w}" height="${h}" fill="#ffffff"/>`
+    + `<path fill="${darkColor || '#0f172a'}" d="${d}"/></svg>`;
+}
+
+// ─ QR 코드 일괄 생성 (단일 or 5장) ─ qrcodejs API 사용
+const _qrUrls = {};
+const PREVIEW_SIZE = 260;
 
 function generateAllQRs() {
   const base = (document.getElementById('qr-base-url')?.value || '').trim();
@@ -2687,63 +2722,65 @@ function generateAllQRs() {
   const activeSlot = _qrConfig.activeNow || _qrConfig.activeQR || 1;
 
   for (let i = 1; i <= count; i++) {
-    const qrUrl   = _buildQRUrl(base, i);
-    _qrUrls[i]    = qrUrl;
-    const isActive = isSingle || (i === activeSlot);
-    const label    = isSingle ? 'QR 코드' : `QR ${i}번`;
-    const badge    = isActive && !isSingle
+    const qrUrl    = _buildQRUrl(base, i);
+    _qrUrls[i]     = qrUrl;
+    const isActive  = isSingle || (i === activeSlot);
+    const label     = isSingle ? 'QR 코드' : `QR ${i}번`;
+    const badge     = (isActive && !isSingle)
       ? '<span class="text-xs px-2 py-0.5 rounded-full bg-teal-500 text-white font-bold ml-1">현재 활성</span>' : '';
     const darkColor = isActive ? '#0f766e' : '#0f172a';
 
+    // ① 카드 DOM 먼저 생성 후 grid에 추가
     const card = document.createElement('div');
     card.className = `flex flex-col items-center p-4 rounded-xl border-2 ${isActive ? 'border-teal-500 bg-teal-50' : 'border-slate-200 bg-white'}`;
     card.innerHTML = `
       <div class="flex items-center gap-1 mb-3">
         <span class="font-bold text-sm ${isActive ? 'text-teal-700' : 'text-slate-600'}">${label}</span>${badge}
       </div>
-      <canvas id="qr-canvas-${i}" style="border-radius:8px;border:1px solid #e2e8f0;max-width:100%"></canvas>
+      <div id="qr-slot-${i}" style="background:white;border-radius:8px;border:1px solid #e2e8f0;line-height:0"></div>
       <div class="text-xs text-slate-400 mt-2 break-all text-center" style="max-width:220px">${qrUrl}</div>
-      <div class="flex gap-1.5 mt-3">
+      <div class="flex gap-1.5 mt-3 w-full">
         <button onclick="downloadQRSlot(${i},'png')"
-          class="flex-1 py-1.5 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50">
+          class="flex-1 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50">
           ⬇ PNG
         </button>
         <button onclick="downloadQRSlot(${i},'svg')"
-          class="flex-1 py-1.5 px-3 rounded-lg border border-teal-200 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100">
+          class="flex-1 py-2 rounded-lg border border-teal-200 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100">
           ⬇ SVG
         </button>
       </div>`;
     grid.appendChild(card);
 
-    // 미리보기 캔버스 (300px 고정)
-    const canvas = document.getElementById(`qr-canvas-${i}`);
-    QRCode.toCanvas(canvas, qrUrl, {
-      width: PREVIEW_SIZE,
-      margin: 1,
-      color: { dark: darkColor, light: '#ffffff' },
-      errorCorrectionLevel: 'M',
-    }).catch(err => console.warn('QR 생성 오류:', err));
+    // ② QR 렌더링 — try/catch로 오류가 나머지 카드 생성을 멈추지 않도록
+    try {
+      const slot = document.getElementById(`qr-slot-${i}`);
+      new QRCode(slot, {
+        text: qrUrl, width: PREVIEW_SIZE, height: PREVIEW_SIZE,
+        colorDark: darkColor, colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    } catch(e) {
+      const slot = document.getElementById(`qr-slot-${i}`);
+      if (slot) slot.innerHTML = `<div class="text-xs text-red-400 p-4">오류: ${e.message}</div>`;
+    }
   }
 }
 
-// ─ QR 코드 다운로드 (PNG: 사용자 지정 크기 / SVG: 벡터)
-async function downloadQRSlot(num, format) {
+// ─ PNG / SVG 다운로드 (qrcodejs 기반, npm qrcode API 사용 안 함)
+function downloadQRSlot(num, format) {
   const qrUrl = _qrUrls[num];
   if (!qrUrl) { showToast('먼저 QR 코드를 생성해주세요'); return; }
 
-  const darkColor = (_qrType !== 'single' && num === (_qrConfig.activeNow || _qrConfig.activeQR || 1))
-    ? '#0f766e' : '#0f172a';
-  const dlSize = Math.max(100, Math.min(3000, Number(document.getElementById('qr-size')?.value) || 1500));
-  const margin = Number(document.getElementById('qr-margin')?.value) || 2;
+  const isActive  = !(_qrType === 'single') && (num === (_qrConfig.activeNow || _qrConfig.activeQR || 1));
+  const darkColor = isActive ? '#0f766e' : '#0f172a';
+  const dlSize    = Math.max(100, Math.min(3000, Number(document.getElementById('qr-size')?.value) || 1500));
+
+  const canvas = _makeQRCanvas(qrUrl, dlSize, darkColor);
+  if (!canvas) { showToast('QR 캔버스 생성 실패'); return; }
 
   if (format === 'svg') {
     try {
-      const svgStr = await QRCode.toString(qrUrl, {
-        type: 'svg',
-        margin: margin,
-        color: { dark: darkColor, light: '#ffffff' },
-        errorCorrectionLevel: 'M',
-      });
+      const svgStr = _canvasToSVG(canvas, darkColor);
       const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -2751,22 +2788,15 @@ async function downloadQRSlot(num, format) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 3000);
       showToast(`QR ${num}번 SVG 저장 완료`);
-    } catch(e) { showToast('SVG 생성 실패: ' + e.message); }
+    } catch(e) { showToast('SVG 실패: ' + e.message); }
   } else {
     try {
-      const dataUrl = await QRCode.toDataURL(qrUrl, {
-        type: 'image/png',
-        width: dlSize,
-        margin: margin,
-        color: { dark: darkColor, light: '#ffffff' },
-        errorCorrectionLevel: 'M',
-      });
       const a = document.createElement('a');
-      a.href = dataUrl;
+      a.href = canvas.toDataURL('image/png');
       a.download = `pharmacy-qr-${num}-${dlSize}px.png`;
       a.click();
-      showToast(`QR ${num}번 PNG ${dlSize}px 저장 완료`);
-    } catch(e) { showToast('PNG 생성 실패: ' + e.message); }
+      showToast(`QR ${num}번 PNG (${dlSize}px) 저장 완료`);
+    } catch(e) { showToast('PNG 실패: ' + e.message); }
   }
 }
 
@@ -3788,721 +3818,4 @@ function fillSettings() {
   const key = data.settings.mfdsApiKey || '';
   $('#setting-mfds-key').value = key;
   const statusEl = $('#mfds-key-status');
-  if (statusEl) {
-    statusEl.textContent   = key ? '✅ 키 등록됨' : '미등록';
-    statusEl.style.color   = key ? '#0f766e' : '#94a3b8';
-  }
-}
-function saveSettings() {
-  data.settings.pharmacyName  = $('#setting-name').value.trim() || '로컬 창고약국';
-  data.settings.pharmacyPhone = $('#setting-phone').value.trim();
-  data.settings.tagline       = $('#setting-tagline').value.trim();
-  saveData();
-  applyHeader();
-  showToast('약국 정보가 저장되었습니다');
-}
-function saveDeliveryToggle() {
-  data.settings.allowDelivery = !!$('#setting-allow-delivery').checked;
-  saveData();
-  applyDeliverySetting();
-  showToast(data.settings.allowDelivery ? '택배 수령 허용됨' : '택배 수령 숨김 (약국 수령만)');
-}
-function applyDeliverySetting() {
-  const allowed = !!data.settings.allowDelivery;
-  const deliveryBtn = $('#delivery-btn');
-  if (deliveryBtn) {
-    deliveryBtn.style.display = allowed ? '' : 'none';
-  }
-  // 택배가 숨겨진 경우 pickup으로 강제 전환
-  if (!allowed && typeof setDeliveryMode === 'function') {
-    setDeliveryMode('pickup');
-  }
-}
-function savePayMethods() {
-  data.settings.payMethods = {
-    kakao:   $('#pay-toggle-kakao').checked,
-    naver:   $('#pay-toggle-naver').checked,
-    toss:    $('#pay-toggle-toss').checked,
-    counter: true,
-  };
-  saveData();
-  showToast('결제 수단 설정이 저장되었습니다');
-}
-function saveMfdsKey() {
-  const key = ($('#setting-mfds-key').value || '').trim();
-  data.settings.mfdsApiKey = key;
-  saveData();
-  const statusEl = $('#mfds-key-status');
-  if (statusEl) {
-    statusEl.textContent = key ? '✅ 키 등록됨' : '미등록';
-    statusEl.style.color = key ? '#0f766e' : '#94a3b8';
-  }
-  showToast(key ? 'API 키가 등록되었습니다' : 'API 키가 삭제되었습니다');
-}
-function copyNtfyTopic() {
-  const topic = getNtfyTopic();
-  navigator.clipboard.writeText(topic).then(() => showToast('알림 코드가 복사되었습니다'));
-}
-
-/* ─── 텔레그램 웹훅 등록 / 해제 ─── */
-async function registerTelegramWebhook() {
-  const statusEl = $('#webhook-status');
-  statusEl.textContent = '⏳ 웹훅 등록 중...';
-  statusEl.style.color = '#64748b';
-  try {
-    const res  = await fetch(`${PROXY}/?action=setWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: `${PROXY}/?action=telegramWebhook` }),
-    });
-    const text = await res.text();
-    let json;
-    try { json = JSON.parse(text); } catch(_) { json = { ok: false, description: text }; }
-
-    if (json.ok) {
-      statusEl.textContent = '✅ 웹훅 등록 완료! 텔레그램 봇에 /start 를 보내보세요.';
-      statusEl.style.color = '#0f766e';
-    } else {
-      // 실제 에러 메시지 표시
-      statusEl.textContent = `❌ 등록 실패: ${json.description || JSON.stringify(json)}`;
-      statusEl.style.color = '#dc2626';
-    }
-  } catch(e) {
-    statusEl.textContent = `❌ 오류: ${e.message}`;
-    statusEl.style.color = '#dc2626';
-  }
-}
-async function checkTelegramWebhook() {
-  const statusEl = $('#webhook-status');
-  statusEl.textContent = '🔍 웹훅 상태 확인 중...';
-  statusEl.style.color = '#64748b';
-  try {
-    const res  = await fetch(`${PROXY}/?action=getWebhookInfo`);
-    const json = await res.json();
-    if (json.ok) {
-      const info = json.result;
-      const url  = info.url || '(없음)';
-      const err  = info.last_error_message || '없음';
-      const pending = info.pending_update_count ?? 0;
-      statusEl.innerHTML =
-        `✅ 웹훅 URL: <code class="text-xs bg-slate-100 px-1 rounded break-all">${url}</code><br/>` +
-        `최근 에러: ${err} | 대기 메시지: ${pending}건`;
-      statusEl.style.color = url ? '#0f766e' : '#b45309';
-    } else {
-      statusEl.textContent = `❌ ${json.description || JSON.stringify(json)}`;
-      statusEl.style.color = '#dc2626';
-    }
-  } catch(e) {
-    statusEl.textContent = `❌ ${e.message}`;
-    statusEl.style.color = '#dc2626';
-  }
-}
-async function deleteTelegramWebhook() {
-  const statusEl = $('#webhook-status');
-  statusEl.textContent = '⏳ 웹훅 해제 중...';
-  try {
-    const res  = await fetch(`${PROXY}/?action=deleteWebhook`, { method: 'POST' });
-    const json = await res.json();
-    statusEl.textContent = json.ok ? '✅ 웹훅 해제 완료' : '⚠️ Worker에 deleteWebhook 액션이 없습니다. Cloudflare 대시보드에서 직접 해제하세요.';
-    statusEl.style.color = '#64748b';
-  } catch(e) {
-    statusEl.textContent = '❌ ' + e.message;
-    statusEl.style.color = '#dc2626';
-  }
-}
-function changePin() {
-  const v = ($('#setting-pin').value || '').trim();
-  if (!/^\d{4,8}$/.test(v)) { alert('PIN은 숫자 4~8자리여야 합니다'); return; }
-  data.settings.adminPin = v;
-  saveData();
-  $('#setting-pin').value = '';
-  showToast('PIN이 변경되었습니다 — Cloudflare에 자동 저장됩니다');
-}
-function exportData() {
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url;
-  a.download = `pharmacy-data-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('JSON 파일을 내보냈습니다');
-}
-function exportDataJson() {
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url;
-  a.download = 'data.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('data.json 파일을 다운로드했습니다');
-}
-async function syncFromRemote() {
-  if (!confirm('호스팅된 data.json을 가져와 현재 데이터를 덮어쓸까요?\n(이 기기에 저장된 변경사항은 사라집니다)')) return;
-  try {
-    const res = await fetch('./data.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) { alert('원격 data.json을 찾을 수 없습니다 (호스팅 후에 사용 가능)'); return; }
-    const remote = await res.json();
-    if (!remote.categories || !remote.products) { alert('올바른 데이터 파일이 아닙니다'); return; }
-    localStorage.removeItem(STORAGE_KEY);
-    data = migrate(remote);
-    saveData();
-    applyHeader();
-    switchAdminTab('categories');
-    showToast('원격 데이터로 동기화되었습니다');
-  } catch(e) { alert('동기화 실패: ' + e.message); }
-}
-function importData(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const imported = JSON.parse(ev.target.result);
-      if (!imported.categories || !imported.products) { alert('올바른 데이터 파일이 아닙니다'); return; }
-      if (!confirm('현재 데이터를 덮어쓰시겠습니까?\n(기존 분류·제품·설정이 모두 교체됩니다)')) return;
-      data = migrate(imported);
-      saveData();
-      applyHeader();
-      switchAdminTab('categories');
-      showToast('데이터를 불러왔습니다');
-    } catch(err) { alert('파일을 읽을 수 없습니다: ' + err.message); }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-}
-function resetData() {
-  if (!confirm('모든 분류·제품·설정을 초기 상태로 되돌릴까요?\n(되돌릴 수 없습니다)')) return;
-  data = JSON.parse(JSON.stringify(DEFAULT_DATA));
-  saveData();
-  applyHeader();
-  switchAdminTab('categories');
-  showToast('초기값으로 복원되었습니다');
-}
-
-/* ─── 묶음 할인 ─── */
-function renderSidebarBundleBtn() {
-  const activeBundles = (data.bundles || []).filter(b => b.active);
-  const btn = $('#sidebar-bundle-btn');
-  if (!btn) return;
-  if (activeBundles.length > 0) {
-    btn.classList.remove('hidden');
-    const countEl = $('#sidebar-bundle-count');
-    if (countEl) countEl.textContent = activeBundles.length;
-  } else {
-    btn.classList.add('hidden');
-  }
-}
-
-function showBundleView() {
-  $('#bundle-view').classList.remove('hidden');
-  $('#normal-product-view').classList.add('hidden');
-  const btn = $('#sidebar-bundle-tab');
-  if (btn) btn.dataset.active = 'true';
-  $$('.cat-btn').forEach(b => b.dataset.active = 'false');
-  renderBundleCards();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function hideBundleView() {
-  $('#bundle-view')?.classList.add('hidden');
-  $('#normal-product-view')?.classList.remove('hidden');
-  const btn = $('#sidebar-bundle-tab');
-  if (btn) btn.dataset.active = 'false';
-}
-
-function renderBundleCards() {
-  const grid = $('#bundle-cards');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const active = (data.bundles || []).filter(b => b.active);
-  if (active.length === 0) {
-    grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">활성화된 묶음이 없습니다.</div>';
-    return;
-  }
-  active.forEach(bundle => {
-    const prods = (bundle.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
-    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
-    const save = sumPrice - (bundle.bundlePrice || 0);
-    const card = document.createElement('div');
-    card.className = 'card p-4';
-    card.innerHTML = `
-      <div class="flex items-start gap-3 mb-3">
-        <span class="text-3xl">${bundle.emoji || '🎁'}</span>
-        <div>
-          <div class="font-bold text-base leading-tight">${bundle.name}</div>
-          <div class="text-sm text-slate-500 mt-0.5">${bundle.desc || ''}</div>
-        </div>
-      </div>
-      <div class="space-y-1 mb-3">
-        ${prods.map(p => `<div class="flex items-center gap-2 text-sm"><span>${p.emoji||'📦'}</span><span class="flex-1 line-clamp-1">${p.name}</span><span class="font-semibold text-slate-600">${fmt(p.price)}</span></div>`).join('')}
-      </div>
-      <div class="border-t border-slate-100 pt-2 mt-1">
-        ${sumPrice !== bundle.bundlePrice ? `<div class="text-xs text-slate-400 line-through text-right mb-0.5">개별 합산 ${fmt(sumPrice)}</div>` : ''}
-        <div class="flex items-center justify-between">
-          <div class="text-lg font-bold text-teal-700">${fmt(bundle.bundlePrice || 0)}</div>
-          ${save > 0 ? `<div class="text-xs font-bold text-red-500">🔥 ${fmt(save)} 절약!</div>` : ''}
-        </div>
-      </div>
-      <button onclick="addBundleToCart('${bundle.id}')"
-        class="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white"
-        style="background:var(--brand);">🛒 묶음 전체 담기</button>`;
-    grid.appendChild(card);
-  });
-}
-
-function addBundleToCart(bundleId) {
-  const bundle = (data.bundles || []).find(b => b.id === bundleId);
-  if (!bundle) return;
-  let added = 0;
-  (bundle.productIds || []).forEach(pid => {
-    const p = data.products.find(p => p.id === pid);
-    if (!p || (!p.stock || p.stock <= 0)) return;
-    const existing = cart.find(c => c.id === pid);
-    if (existing) existing.qty++;
-    else cart.push({ id: pid, qty: 1 });
-    added++;
-  });
-  updateCartUI();
-  showToast(`🎁 ${bundle.name} (${added}개 제품) 담겼습니다!`);
-}
-
-/* ─── 관리자: 묶음 관리 ─── */
-function renderAdminBundles() {
-  const wrap = $('#admin-bundle-list');
-  wrap.innerHTML = '';
-  if (!data.bundles || data.bundles.length === 0) {
-    wrap.innerHTML = '<div class="card p-6 text-center text-slate-400 text-sm">묶음이 없습니다. + 묶음 추가 버튼을 눌러보세요.</div>';
-    return;
-  }
-  data.bundles.forEach((b, i) => {
-    const prods = (b.productIds || []).map(id => data.products.find(p => p.id === id)).filter(Boolean);
-    const row = document.createElement('div');
-    row.className = 'card p-4';
-    row.innerHTML = `
-      <div class="flex items-center gap-3">
-        <span class="text-2xl">${b.emoji || '🎁'}</span>
-        <div class="flex-1 min-w-0">
-          <div class="font-bold leading-tight">${b.name}</div>
-          <div class="text-xs text-slate-400 mt-0.5">${prods.map(p=>p.name).join(' + ')} → ${fmt(b.bundlePrice||0)}</div>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <span class="text-xs px-2 py-0.5 rounded-full font-semibold ${b.active ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-400'}">${b.active ? '활성' : '비활성'}</span>
-          <button onclick="openBundleEditor('${b.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-          <button onclick="deleteBundle('${b.id}')" class="btn-danger text-sm">삭제</button>
-        </div>
-      </div>`;
-    wrap.appendChild(row);
-  });
-}
-
-function openBundleEditor(id) {
-  const editing = id ? (data.bundles || []).find(b => b.id === id) : null;
-  $('#bundle-editor-title').textContent = editing ? '묶음 수정' : '묶음 추가';
-  $('#bundle-edit-id').value       = id || '';
-  $('#bundle-edit-emoji').value    = editing?.emoji || '🎁';
-  $('#bundle-edit-name').value     = editing?.name  || '';
-  $('#bundle-edit-desc').value     = editing?.desc  || '';
-  $('#bundle-edit-price').value    = editing?.bundlePrice || '';
-  $('#bundle-edit-active').checked = editing ? !!editing.active : true;
-
-  // 제품 체크박스 목록
-  const box = $('#bundle-product-checkboxes');
-  box.innerHTML = '';
-  data.products.forEach(p => {
-    const checked = editing?.productIds?.includes(p.id) ? 'checked' : '';
-    const cat = data.categories.find(c => c.id === p.cat);
-    const label = document.createElement('label');
-    label.className = 'flex items-center gap-2 cursor-pointer text-sm';
-    label.innerHTML = `
-      <input type="checkbox" class="bundle-prod-check w-4 h-4 accent-teal-500" value="${p.id}" ${checked} onchange="updateBundlePriceSummary()" />
-      <span>${p.emoji||'📦'}</span>
-      <span class="flex-1 line-clamp-1">${p.name}</span>
-      <span class="text-xs text-slate-400">${fmt(p.price)}</span>`;
-    box.appendChild(label);
-  });
-
-  $('#bundle-editor-overlay').classList.remove('hidden');
-  updateBundlePriceSummary();
-}
-
-function closeBundleEditor() {
-  $('#bundle-editor-overlay').classList.add('hidden');
-}
-
-function updateBundlePriceSummary() {
-  const checked = Array.from($$('.bundle-prod-check:checked'));
-  const sumPrice = checked.reduce((s, cb) => {
-    const p = data.products.find(p => p.id === cb.value);
-    return s + (p?.price || 0);
-  }, 0);
-  const bundlePrice = parseInt($('#bundle-edit-price').value) || 0;
-  const summary = $('#bundle-price-summary');
-  if (checked.length >= 1) {
-    summary.classList.remove('hidden');
-    $('#bundle-sum-price').textContent = fmt(sumPrice);
-    $('#bundle-final-display').textContent = bundlePrice ? fmt(bundlePrice) : '미입력';
-    const save = sumPrice - bundlePrice;
-    $('#bundle-save-display').textContent = (bundlePrice > 0 && save > 0) ? `${fmt(save)} 절약!` : '';
-  } else {
-    summary.classList.add('hidden');
-  }
-}
-
-function saveBundle() {
-  const id      = $('#bundle-edit-id').value;
-  const emoji   = $('#bundle-edit-emoji').value.trim() || '🎁';
-  const name    = $('#bundle-edit-name').value.trim();
-  const desc    = $('#bundle-edit-desc').value.trim();
-  const price   = parseInt($('#bundle-edit-price').value) || 0;
-  const active  = $('#bundle-edit-active').checked;
-  const prodIds = Array.from($$('.bundle-prod-check:checked')).map(cb => cb.value);
-
-  if (!name) { alert('묶음 이름을 입력해주세요'); return; }
-  if (prodIds.length < 1) { alert('제품을 1개 이상 선택해주세요'); return; }
-  if (price <= 0) { alert('묶음 특가를 입력해주세요'); return; }
-
-  if (!data.bundles) data.bundles = [];
-  if (id) {
-    const idx = data.bundles.findIndex(b => b.id === id);
-    if (idx >= 0) data.bundles[idx] = { id, emoji, name, desc, productIds: prodIds, bundlePrice: price, active };
-  } else {
-    data.bundles.push({ id: 'b_' + Date.now().toString(36), emoji, name, desc, productIds: prodIds, bundlePrice: price, active });
-  }
-  saveData();
-  closeBundleEditor();
-  renderAdminBundles();
-  renderSidebarBundleBtn();
-  showToast('묶음이 저장됐습니다');
-}
-
-function deleteBundle(id) {
-  const b = (data.bundles || []).find(b => b.id === id);
-  if (!b) return;
-  if (!confirm(`"${b.name}" 묶음을 삭제할까요?`)) return;
-  data.bundles = data.bundles.filter(b => b.id !== id);
-  saveData();
-  renderAdminBundles();
-  renderSidebarBundleBtn();
-  showToast('삭제됐습니다');
-}
-
-/* ─── 원격 데이터 동기화 (Cloudflare KV) ───
-   localStorage 없는 고객 기기에서만 KV 데이터를 불러와 화면을 갱신.
-   관리자 기기(localStorage 있음)는 건드리지 않아 최신 편집이 유지됨. */
-async function tryLoadRemoteData() {
-  try {
-    const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
-    if (!res.ok) return false;
-    const remote = await res.json();
-    if (!remote.categories || !remote.products) return false;
-    const localTs  = data._savedAt  || 0;
-    const remoteTs = remote._savedAt || 0;
-
-    // 관리자 기기: KV가 더 최신이면 (텔레그램 등록 등) 배너로 알림
-    if (_adminUrlMode) {
-      if (remoteTs > localTs) {
-        const newProds = remote.products.filter(
-          rp => !data.products.find(lp => lp.id === rp.id)
-        );
-        if (newProds.length > 0) {
-          showTelegramSyncBanner(newProds.length, remote);
-        }
-      }
-      return false;
-    }
-
-    // 고객 기기: KV가 오래됐으면 무시
-    if (localTs > remoteTs) return false;
-    data = migrate(remote);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    if (!data.categories.find(c => c.id === currentCat)) {
-      currentCat = data.categories[0]?.id || 'hot';
-    }
-    applyHeader();
-    renderCategories();
-    renderProducts();
-    renderSidebarBundleBtn();
-    return true;
-  } catch(e) { return false; }
-}
-
-// ── 텔레그램 신규 제품 알림 배너 ───────────────────────────
-function showTelegramSyncBanner(count, remoteData) {
-  const existing = document.getElementById('tg-sync-banner');
-  if (existing) existing.remove();
-
-  const banner = document.createElement('div');
-  banner.id = 'tg-sync-banner';
-  banner.style.cssText = `
-    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-    background:#16a34a; color:white; padding:12px 20px; border-radius:16px;
-    box-shadow:0 4px 20px rgba(0,0,0,0.25); z-index:9999;
-    display:flex; align-items:center; gap:12px; font-size:14px; font-weight:600;
-    max-width:340px; width:calc(100% - 32px);
-  `;
-  banner.innerHTML = `
-    <span>📲 텔레그램에서 ${count}개 제품이 추가됐어요!</span>
-    <button onclick="applyTelegramSync()" style="
-      background:white; color:#16a34a; border:none; border-radius:10px;
-      padding:6px 14px; font-weight:700; cursor:pointer; font-size:13px; white-space:nowrap;
-    ">불러오기</button>
-    <button onclick="document.getElementById('tg-sync-banner').remove()" style="
-      background:transparent; color:rgba(255,255,255,0.8); border:none;
-      cursor:pointer; font-size:18px; line-height:1; padding:0 2px;
-    ">✕</button>
-  `;
-  document.body.appendChild(banner);
-
-  // 10초 후 자동 사라짐
-  setTimeout(() => banner.remove?.(), 10000);
-
-  // remoteData를 임시 보관
-  window._pendingRemoteData = remoteData;
-}
-
-function applyTelegramSync() {
-  if (!window._pendingRemoteData) return;
-  data = migrate(window._pendingRemoteData);
-  saveData();
-  if (!data.categories.find(c => c.id === currentCat)) {
-    currentCat = data.categories[0]?.id || 'hot';
-  }
-  applyHeader();
-  renderCategories();
-  renderProducts();
-  renderSidebarBundleBtn();
-  document.getElementById('tg-sync-banner')?.remove();
-  window._pendingRemoteData = null;
-  alert(`✅ 텔레그램에서 추가된 제품을 불러왔어요!`);
-}
-
-// ── 관리자 모드: 60초마다 KV 체크 (텔레그램 제품 감지) ─────
-if (_adminUrlMode) {
-  setInterval(() => tryLoadRemoteData(), 60000);
-}
-
-/* ─── 초기화 ─── */
-$('#cart-fab').addEventListener('click', () => toggleCart(true));
-
-// 뒤로가기 버튼 → 열린 모달 닫기
-/* ─── 초기화 ─── */
-$('#cart-fab').addEventListener('click', () => toggleCart(true));
-
-// 뒤로가기 버튼 → 열린 모달 닫기
-window.addEventListener('popstate', () => {
-  if (!$('#detail-modal').classList.contains('hidden')) {
-    closeDetail(true);
-    return;
-  }
-  if (!$('#payment-modal-overlay').classList.contains('hidden')) {
-    $('#payment-modal-overlay').classList.add('hidden');
-    return;
-  }
-  if (!$('#cart-panel').classList.contains('hidden')) {
-    toggleCart(false);
-    return;
-  }
-});
-
-// 관리자 URL(?mode=admin) → QR 타이머 우회 + 세션 복원 or 로그인 창
-if (_adminUrlMode) {
-  if (sessionStorage.getItem('pharm_admin_session')) {
-    isAdmin = true;
-    window._qrPriceVisible = true;
-    setTimeout(() => enterAdmin(), 0);
-  } else {
-    setTimeout(() => openAdminLogin(), 300);
-  }
-} else {
-  checkQRValidity().then(() => {
-    renderProducts(); // QR 검증 후 가격 표시 여부 반영
-  });
-}
-
-applyHeader();
-renderCategories();
-renderProducts();
-renderSidebarBundleBtn();
-updateCartUI();
-applyDeliverySetting();
-tryLoadRemoteData();
-
-/* ═══════════════════════════════════════════════
-   🤖 AI 제품 분석 (Cloudflare Workers AI)
-   ═══════════════════════════════════════════════ */
-async function analyzeProductWithAI() {
-  const imgData   = $('#prod-edit-image').value;
-  const imgFile   = $('#prod-img-file').files?.[0];
-  const existName = ($('#prod-edit-name').value || '').trim();
-  const statusEl  = $('#ai-analyze-status');
-  const btn       = $('#ai-analyze-btn');
-
-  if (!existName && !imgData && !imgFile) {
-    statusEl.className = 'text-xs text-center mt-1 text-orange-500';
-    statusEl.textContent = '⚠️ 제품명을 입력하거나 사진을 업로드해주세요';
-    statusEl.classList.remove('hidden');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerHTML = '⏳ AI 분석 중...';
-  statusEl.className = 'text-xs text-center mt-1 text-slate-400';
-  statusEl.classList.remove('hidden');
-
-  try {
-    const catList = (data.categories || []).map(c => ({ id: c.id, name: c.name }));
-
-    if (existName) {
-      statusEl.textContent = `🔍 "${existName}" AI 분석 중...`;
-      const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productName: existName, categories: catList }),
-      });
-      if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
-      const result = await resp.json();
-      if (result.error) throw new Error(result.error);
-      _fillAIResult(result, statusEl);
-      return;
-    }
-
-    let imgSrc = imgData;
-    if (imgFile && !imgSrc) {
-      const reader = new FileReader();
-      imgSrc = await new Promise((res, rej) => {
-        reader.onload = e2 => res(e2.target.result);
-        reader.onerror = rej;
-        reader.readAsDataURL(imgFile);
-      });
-    }
-    let base64 = imgSrc, mediaType = 'image/jpeg';
-    const m = imgSrc.match(/^data:([^;]+);base64,(.+)$/);
-    if (m) { mediaType = m[1]; base64 = m[2]; }
-
-    statusEl.textContent = '🧠 AI가 사진을 분석 중... (5~10초)';
-    const resp = await fetch(`${PROXY}/?action=analyzeProduct`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageData: base64, mediaType, categories: catList }),
-    });
-    if (!resp.ok) throw new Error(`서버 오류 ${resp.status}`);
-    const result = await resp.json();
-    if (result.error) throw new Error(result.error);
-    _fillAIResult(result, statusEl);
-
-  } catch (e) {
-    statusEl.className = 'text-xs text-center mt-1 text-red-500';
-    statusEl.textContent = `❌ 분석 실패: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '🤖 AI 분석';
-  }
-}
-
-function _fillAIResult(result, statusEl) {
-  let filled = 0;
-  const set = (id, val) => { if (val) { const el = $('#' + id); if (el) { el.value = val; filled++; } } };
-  set('prod-edit-name',    result.name);
-  set('prod-edit-tagline', result.tagline);
-  set('prod-edit-note',    result.pharmacistNote);
-  set('prod-edit-info',    result.info);
-  if (result.suggestedEmoji) {
-    const el = $('#prod-edit-emoji');
-    if (el) { el.value = result.suggestedEmoji; filled++; }
-    if (typeof updateImgPreview === 'function') updateImgPreview();
-  }
-  if (result.suggestedBadges?.length) {
-    const el = $('#prod-edit-badges');
-    if (el) { el.value = result.suggestedBadges.join(', '); filled++; }
-  }
-  if (result.suggestedCategoryId) {
-    const sel = $('#prod-edit-cat');
-    if (sel) {
-      const opt = Array.from(sel.options).find(o => o.value === result.suggestedCategoryId);
-      if (opt) { sel.value = result.suggestedCategoryId; filled++; }
-    }
-  }
-  const nameStr = result.name ? `\n📦 ${result.name}` : '';
-  statusEl.className = 'text-xs text-center mt-1 text-teal-600 font-semibold';
-  statusEl.textContent = `✅ ${filled}개 항목 자동 입력!${nameStr}`;
-}
-
-function downloadExcelTemplate() {
-  if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
-  const headers = ['제품명*','분류ID*','이모지','한줄소개','판매가*','정가','재고','배지(콤마구분)','복약지도','제품정보'];
-  const example = ['루테인 골드 365일분','hot','💊','눈 건강 종합 관리, 1일 1정',39000,59000,12,'대용량,함량 1위','하루 1정, 식후 복용','루테인 20mg / 12개월분'];
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-  ws['!cols'] = [20,12,6,25,10,10,8,16,35,25].map(w => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws, '제품목록');
-  const ws2 = XLSX.utils.aoa_to_sheet([['※ 분류ID 목록', ...data.categories.map(c => `${c.id} = ${c.name}`)]]);
-  XLSX.utils.book_append_sheet(wb, ws2, '분류ID 안내');
-  XLSX.writeFile(wb, '제품등록_템플릿.xlsx');
-}
-
-async function importFromExcel(event) {
-  if (typeof XLSX === 'undefined') { alert('XLSX 라이브러리 로딩 중...'); return; }
-  const file = event.target.files?.[0];
-  if (!file) return;
-  event.target.value = '';
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    try {
-      const wb   = XLSX.read(ev.target.result, { type: 'array' });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      if (rows.length < 2) { alert('데이터가 없습니다. 2행부터 제품을 입력해주세요.'); return; }
-      const hdr = rows[0].map(h => String(h).trim());
-      const col = n => hdr.findIndex(h => h.includes(n));
-      const cx  = {
-        name: col('제품명'), cat: col('분류ID'), emoji: col('이모지'),
-        tagline: col('한줄소개'), price: col('판매가'), list: col('정가'),
-        stock: col('재고'), badges: col('배지'), note: col('복약지도'), info: col('제품정보'),
-      };
-      if (cx.name < 0 || cx.price < 0) {
-        alert('헤더에 "제품명"과 "판매가" 컬럼이 필요합니다.\n템플릿을 다운받아 사용해주세요.');
-        return;
-      }
-      const newProds = [];
-      for (let i = 1; i < rows.length; i++) {
-        const r     = rows[i];
-        const name  = String(r[cx.name]  || '').trim(); if (!name) continue;
-        const price = parseInt(r[cx.price]) || 0;       if (price <= 0) continue;
-        const catVal = cx.cat >= 0 ? String(r[cx.cat] || '').trim() : '';
-        const cat = catVal && data.categories.find(c => c.id === catVal) ? catVal : (data.categories[0]?.id || 'hot');
-        newProds.push({
-          id: 'p_' + Date.now() + '_' + i, cat,
-          emoji:   cx.emoji   >= 0 ? String(r[cx.emoji]   || '').trim() || '💊' : '💊',
-          name,
-          tagline: cx.tagline >= 0 ? String(r[cx.tagline] || '').trim() : '',
-          price,
-          list:    cx.list  >= 0 ? (parseInt(r[cx.list])  || null) : null,
-          stock:   cx.stock >= 0 ? (parseInt(r[cx.stock]) || 0)    : 0,
-          badges:  cx.badges >= 0 ? String(r[cx.badges] || '').split(',').map(b => b.trim()).filter(Boolean) : [],
-          pharmacistNote: cx.note >= 0 ? String(r[cx.note] || '').trim() : '',
-          info:    cx.info  >= 0 ? String(r[cx.info]  || '').trim() : '',
-        });
-      }
-      if (newProds.length === 0) { alert('유효한 제품 행이 없습니다.'); return; }
-      const add = confirm(`✅ ${newProds.length}개 제품을 가져옵니다.\n\n[확인] = 기존 제품에 추가\n[취소] = 기존 제품 전체 교체`);
-      if (add) {
-        data.products = [...data.products, ...newProds];
-      } else {
-        if (!confirm('기존 제품이 모두 삭제됩니다. 계속할까요?')) return;
-        data.products = newProds;
-      }
-      saveData();
-      renderAdminProducts();
-      renderProducts();
-      showToast(`✅ ${newProds.length}개 제품 등록 완료!`);
-    } catch (err) { alert('엑셀 파일 읽기 오류: ' + err.message); }
-  };
-  reader.readAsArrayBuffer(file);
-}
-</script>
-</body>
-</html>
+  if
