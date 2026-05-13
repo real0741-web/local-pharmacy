@@ -695,7 +695,10 @@
           💡 <b>화면 미리보기</b>는 항상 축소 표시됩니다. 다운로드 크기만 실제 파일에 반영돼요.<br/>
           A4 가득: <b>1500~2000px</b> (300dpi 고화질) · 소형 스티커: 400~600px · SVG는 크기 무관 (무한 확대 가능)
         </div>
+        <!-- 생성할 QR 장 수 (1 or 5) — setQRType()에서 업데이트 -->
+        <input type="hidden" id="qr-slot-count" value="1" />
         <button id="qr-gen-btn" onclick="generateAllQRs()" class="btn-primary mb-4">🔲 QR 코드 생성</button>
+        <div id="qr-debug-info" class="text-xs text-slate-400 mb-2 hidden"></div>
         <div id="qr-grid" class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));"></div>
       </div>
     </section>
@@ -2504,24 +2507,27 @@ function setQRType(type) {
     $('#qr-step2').classList.add('hidden');
     $('#qr-panel-auto').classList.add('hidden');
     $('#qr-panel-manual').classList.add('hidden');
-    // 생성 패널: 단일 QR 설명으로
     const genPanel = $('#qr-panel-generate');
     genPanel.classList.remove('hidden');
     $('#qr-gen-title').textContent = '🆕 QR 코드 생성';
     $('#qr-gen-desc').textContent  = 'URL을 입력하고 QR 코드를 생성하세요. 단순 링크 QR입니다.';
     $('#qr-gen-btn').textContent   = '🔲 QR 코드 생성';
+    // ★ DOM에 장 수 저장 (1장)
+    const cntEl = document.getElementById('qr-slot-count');
+    if (cntEl) cntEl.value = '1';
     _qrConfig.mode = 'single';
   } else {
     rotationBtn.className = on;
     singleBtn.className   = off;
     $('#qr-step2').classList.remove('hidden');
-    // 생성 패널: 5장 설명으로 (모드 선택 후 표시)
     const genPanel = $('#qr-panel-generate');
     genPanel.classList.remove('hidden');
     $('#qr-gen-title').textContent = '🖨️ QR 카드 5장 생성';
     $('#qr-gen-desc').textContent  = '5장을 미리 인쇄해 번호를 매겨 보관하세요. 교체 시기가 되면 해당 번호 카드를 꺼내 부착하면 됩니다.';
     $('#qr-gen-btn').textContent   = '🔲 5장 QR 코드 생성';
-    // Worker에서 현재 설정 로드
+    // ★ DOM에 장 수 저장 (5장)
+    const cntEl = document.getElementById('qr-slot-count');
+    if (cntEl) cntEl.value = '5';
     loadQRConfig();
   }
 }
@@ -2656,7 +2662,8 @@ async function saveQRConfig() {
 
 // ─ QR URL 조합 헬퍼
 function _buildQRUrl(base, slotNum) {
-  if (_qrType === 'single') return base;
+  // slotNum이 null/undefined이거나 _qrType이 single이면 순수 URL 반환
+  if (!slotNum || _qrType === 'single') return base;
   try {
     const u = new URL(base);
     u.searchParams.set('qr', String(slotNum));
@@ -2717,8 +2724,40 @@ function generateAllQRs() {
   grid.innerHTML = '';
   Object.keys(_qrUrls).forEach(k => delete _qrUrls[k]);
 
-  const isSingle   = (_qrType === 'single');
-  const count      = isSingle ? 1 : 5;
+  // ★★★ 장 수 결정: DOM 버튼 상태 → hidden input → _qrType 순서로 확인
+  // 1) 순환 버튼이 활성(teal 테두리)이면 무조건 5장
+  const rotBtn = document.getElementById('qr-type-rotation-btn');
+  const singleBtn = document.getElementById('qr-type-single-btn');
+  const rotActive = rotBtn && rotBtn.className.includes('border-teal-500');
+  const singleActive = singleBtn && singleBtn.className.includes('border-teal-500');
+
+  // 2) hidden input 값도 확인
+  const cntEl = document.getElementById('qr-slot-count');
+  const countFromDOM = parseInt(cntEl?.value || '1', 10);
+
+  // 3) 최종 결정: 순환 버튼이 활성이거나 DOM count가 5이면 5장, 아니면 1장
+  let count = 1;
+  if (rotActive || countFromDOM >= 5) {
+    count = 5;
+    _qrType = 'rotation';
+    if (cntEl) cntEl.value = '5';
+  } else if (singleActive || _qrType === 'single') {
+    count = 1;
+    _qrType = 'single';
+    if (cntEl) cntEl.value = '1';
+  } else {
+    // 아무것도 선택 안 했으면 _qrType 기준
+    count = (_qrType === 'single') ? 1 : 5;
+  }
+
+  // 디버그 표시
+  const dbg = document.getElementById('qr-debug-info');
+  if (dbg) {
+    dbg.textContent = `rotActive=${rotActive} | singleActive=${singleActive} | domCount=${countFromDOM} | _qrType="${_qrType}" | ▶ 생성=${count}장`;
+    dbg.classList.remove('hidden');
+  }
+
+  const isSingle = (count === 1);
   const activeSlot = _qrConfig.activeNow || _qrConfig.activeQR || 1;
 
   for (let i = 1; i <= count; i++) {
