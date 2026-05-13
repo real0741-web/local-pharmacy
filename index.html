@@ -3842,56 +3842,6 @@ async function stopBarcodeCamera() {
 
 /* ─── 설정 ─── */
 function fillSettings() {
-  $('#setting-name').value    = data.settings.pharmacyName || '';
-  $('#setting-phone').value   = data.settings.pharmacyPhone || '';
-  $('#setting-tagline').value = data.settings.tagline || '';
-  $('#setting-pin').value     = '';
-  const ntfyEl = $('#ntfy-topic-display');
-  if (ntfyEl) ntfyEl.textContent = getNtfyTopic();
-  const deliveryEl = $('#setting-allow-delivery');
-  if (deliveryEl) deliveryEl.checked = !!data.settings.allowDelivery;
-  const pm = data.settings.payMethods || { kakao:false, naver:false, toss:false, counter:true };
-  $('#pay-toggle-kakao').checked = !!pm.kakao;
-  $('#pay-toggle-naver').checked = !!pm.naver;
-  $('#pay-toggle-toss').checked  = !!pm.toss;
-  const key = data.settings.mfdsApiKey || '';
-  $('#setting-mfds-key').value = key;
-  const statusEl = $('#mfds-key-status');
-  if39,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.ITF,
-        ],
-      },
-      (decodedText) => {
-        const code = decodedText.replace(/\D/g, '');
-        if (code) {
-          $('#barcode-input').value = code;
-          stopBarcodeCamera();
-          lookupBarcode();
-        }
-      },
-      () => {}
-    );
-  } catch(e) {
-    showToast('카메라를 열 수 없습니다: ' + e.message);
-    $('#barcode-camera-wrap').classList.add('hidden');
-  }
-}
-
-async function stopBarcodeCamera() {
-  if (_html5QrCode) {
-    try {
-      if (_html5QrCode.isScanning) await _html5QrCode.stop();
-      _html5QrCode.clear();
-    } catch(e) { console.warn('카메라 종료 오류:', e); }
-    _html5QrCode = null;
-  }
-  const wrap = $('#barcode-camera-wrap');
-  if (wrap) wrap.classList.add('hidden');
-}
-
-/* ─── 설정 ─── */
-function fillSettings() {
   if ($('#setting-name'))    $('#setting-name').value    = data.settings.pharmacyName || '';
   if ($('#setting-phone'))   $('#setting-phone').value   = data.settings.pharmacyPhone || '';
   if ($('#setting-tagline')) $('#setting-tagline').value = data.settings.tagline || '';
@@ -4081,7 +4031,7 @@ async function deleteTelegramWebhook() {
     } else {
       throw new Error(json.description || '해제 실패');
     }
-  } catch(err)  } catch(err) {
+  } catch(err) {
     if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
     showToast('❌ 웹훅 해제 실패: ' + err.message);
   }
