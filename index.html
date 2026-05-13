@@ -2230,6 +2230,231 @@ function populateProdFilter() {
     data.categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   sel.value = cur;
 }
+/* ─── 묶음 특가 (고객화면) ─── */
+function renderSidebarBundleBtn() {
+  const activeBundles = (data.bundles || []).filter(b => b.active);
+  const wrap = $('#sidebar-bundle-btn');
+  if (!wrap) return;
+  if (activeBundles.length === 0) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const countEl = $('#sidebar-bundle-count');
+  if (countEl) countEl.textContent = activeBundles.length;
+
+  // 모바일 탭에도 묶음 버튼 추가 (없으면 생성)
+  const tabs = $('#mobile-tabs');
+  if (tabs) {
+    let mobileBtn = $('#mobile-bundle-tab');
+    if (!mobileBtn) {
+      mobileBtn = document.createElement('button');
+      mobileBtn.id = 'mobile-bundle-tab';
+      mobileBtn.className = 'tab-btn shrink-0 px-4 py-2.5 rounded-full text-base font-bold border border-amber-300 bg-amber-50 text-amber-700';
+      mobileBtn.onclick = () => showBundleView();
+      mobileBtn.innerHTML = `🎁 묶음특가 <span class="ml-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">${activeBundles.length}</span>`;
+      tabs.insertBefore(mobileBtn, tabs.firstChild);
+    } else {
+      mobileBtn.classList.remove('hidden');
+    }
+  }
+}
+
+function showBundleView() {
+  const activeBundles = (data.bundles || []).filter(b => b.active);
+  const view = $('#bundle-view');
+  const normal = $('#normal-product-view');
+  if (view) view.classList.remove('hidden');
+  if (normal) normal.classList.add('hidden');
+
+  // 사이드바 버튼 활성 표시
+  const sideBtn = $('#sidebar-bundle-tab');
+  if (sideBtn) sideBtn.style.boxShadow = '0 0 0 2px #fbbf24';
+
+  // 번들 카드 렌더
+  const wrap = $('#bundle-cards');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (activeBundles.length === 0) {
+    wrap.innerHTML = `<div class="col-span-2 text-center text-slate-400 py-12">등록된 묶음 특가가 없습니다.</div>`;
+    return;
+  }
+  activeBundles.forEach(b => {
+    const prods = (b.products || []).map(pid => data.products.find(p => p.id === pid)).filter(Boolean);
+    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+    const save = sumPrice - (b.price || 0);
+    const card = document.createElement('div');
+    card.className = 'card p-5 cursor-pointer hover:shadow-md transition-all';
+    card.onclick = () => {
+      prods.forEach(p => addToCart(p.id));
+      showToast(`🎁 ${b.name} 묶음이 장바구니에 담겼어요!`);
+    };
+    card.innerHTML = `
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-3xl">${b.emoji || '🎁'}</span>
+        <div>
+          <div class="font-bold text-base">${b.name}</div>
+          <div class="text-xs text-slate-500">${b.desc || ''}</div>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5 mb-3">
+        ${prods.map(p => `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">${p.emoji || ''} ${p.name}</span>`).join('')}
+      </div>
+      <div class="flex items-end justify-between mt-2">
+        <div>
+          <div class="text-xs text-slate-400 line-through">${sumPrice.toLocaleString()}원</div>
+          <div class="text-xl font-bold text-teal-600">${(b.price || 0).toLocaleString()}원</div>
+        </div>
+        ${save > 0 ? `<span class="bg-red-50 text-red-500 text-xs font-bold px-2 py-1 rounded-lg">${save.toLocaleString()}원 절약</span>` : ''}
+      </div>
+      <button class="mt-3 w-full btn-primary text-sm">🛒 묶음 담기</button>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+function hideBundleView() {
+  const view = $('#bundle-view');
+  const normal = $('#normal-product-view');
+  if (view) view.classList.add('hidden');
+  if (normal) normal.classList.remove('hidden');
+
+  const sideBtn = $('#sidebar-bundle-tab');
+  if (sideBtn) sideBtn.style.boxShadow = '';
+
+  const mobileBtn = $('#mobile-bundle-tab');
+  if (mobileBtn) mobileBtn.dataset.active = 'false';
+}
+
+/* ─── 묶음 특가 (관리자) ─── */
+function renderAdminBundles() {
+  const wrap = $('#admin-bundle-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const bundles = data.bundles || [];
+  if (bundles.length === 0) {
+    wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm">묶음이 없습니다. + 묶음 추가 버튼을 눌러 시작하세요.</div>`;
+    return;
+  }
+  bundles.forEach(b => {
+    const prods = (b.products || []).map(pid => data.products.find(p => p.id === pid)).filter(Boolean);
+    const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+    const row = document.createElement('div');
+    row.className = 'card p-4 flex items-start gap-3';
+    row.innerHTML = `
+      <div class="text-2xl pt-0.5">${b.emoji || '🎁'}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold">${b.name}</span>
+          ${b.active
+            ? `<span class="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold">노출 중</span>`
+            : `<span class="bg-slate-100 text-slate-400 text-xs px-2 py-0.5 rounded-full">비활성</span>`}
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">${b.desc || ''}</div>
+        <div class="flex flex-wrap gap-1 mt-1.5">
+          ${prods.map(p => `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">${p.emoji || ''} ${p.name}</span>`).join('')}
+        </div>
+        <div class="mt-1.5 text-sm">
+          <span class="text-slate-400 line-through text-xs mr-1">${sumPrice.toLocaleString()}원</span>
+          <span class="font-bold text-teal-600">${(b.price || 0).toLocaleString()}원</span>
+        </div>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button onclick="openBundleEditor('${b.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+        <button onclick="deleteBundle('${b.id}')" class="btn-danger text-sm">삭제</button>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+function openBundleEditor(id) {
+  const editing = id ? (data.bundles || []).find(b => b.id === id) : null;
+  $('#bundle-editor-title').textContent = editing ? '묶음 수정' : '묶음 추가';
+  $('#bundle-edit-id').value    = id || '';
+  $('#bundle-edit-emoji').value = editing?.emoji || '';
+  $('#bundle-edit-name').value  = editing?.name  || '';
+  $('#bundle-edit-desc').value  = editing?.desc  || '';
+  $('#bundle-edit-price').value = editing?.price != null ? editing.price : '';
+  $('#bundle-edit-active').checked = editing ? !!editing.active : true;
+
+  // 제품 체크박스 렌더
+  const wrap = $('#bundle-product-checkboxes');
+  wrap.innerHTML = '';
+  data.products.filter(p => !p.hidden).forEach(p => {
+    const checked = editing?.products?.includes(p.id) ? 'checked' : '';
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-2 cursor-pointer hover:bg-slate-100 px-2 py-1 rounded-lg';
+    label.innerHTML = `
+      <input type="checkbox" value="${p.id}" ${checked} class="w-4 h-4 accent-teal-500" onchange="updateBundlePriceSummary()" />
+      <span class="text-sm">${p.emoji || ''} ${p.name}</span>
+      <span class="ml-auto text-xs text-slate-400">${(p.price || 0).toLocaleString()}원</span>
+    `;
+    wrap.appendChild(label);
+  });
+
+  updateBundlePriceSummary();
+  $('#bundle-editor-overlay').classList.remove('hidden');
+}
+
+function closeBundleEditor() {
+  $('#bundle-editor-overlay').classList.add('hidden');
+}
+
+function updateBundlePriceSummary() {
+  const checked = [...$('#bundle-product-checkboxes').querySelectorAll('input[type=checkbox]:checked')];
+  const pids = checked.map(c => c.value);
+  const prods = pids.map(pid => data.products.find(p => p.id === pid)).filter(Boolean);
+  const sumPrice = prods.reduce((s, p) => s + (p.price || 0), 0);
+  const bundlePrice = parseInt($('#bundle-edit-price').value || '0', 10);
+  const summary = $('#bundle-price-summary');
+  if (pids.length >= 2) {
+    summary.classList.remove('hidden');
+    $('#bundle-sum-price').textContent = sumPrice.toLocaleString() + '원';
+    $('#bundle-final-display').textContent = (bundlePrice || sumPrice).toLocaleString() + '원';
+    const save = sumPrice - bundlePrice;
+    $('#bundle-save-display').textContent = (bundlePrice && save > 0) ? `${save.toLocaleString()}원 절약` : '';
+  } else {
+    summary.classList.add('hidden');
+  }
+}
+
+function saveBundle() {
+  const id    = $('#bundle-edit-id').value.trim();
+  const emoji = $('#bundle-edit-emoji').value.trim();
+  const name  = $('#bundle-edit-name').value.trim();
+  const desc  = $('#bundle-edit-desc').value.trim();
+  const price = parseInt($('#bundle-edit-price').value || '0', 10);
+  const active = $('#bundle-edit-active').checked;
+  const pids = [...$('#bundle-product-checkboxes').querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+
+  if (!name) { showToast('묶음 이름을 입력해주세요.'); return; }
+  if (pids.length < 2) { showToast('제품을 2개 이상 선택해주세요.'); return; }
+  if (!price) { showToast('묶음 특가를 입력해주세요.'); return; }
+
+  if (!data.bundles) data.bundles = [];
+  if (id) {
+    const idx = data.bundles.findIndex(b => b.id === id);
+    if (idx >= 0) data.bundles[idx] = { id, emoji, name, desc, products: pids, price, active };
+  } else {
+    data.bundles.push({ id: 'b' + Date.now(), emoji: emoji || '🎁', name, desc, products: pids, price, active });
+  }
+  saveData();
+  closeBundleEditor();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('✅ 묶음이 저장됐습니다!');
+}
+
+function deleteBundle(id) {
+  if (!confirm('이 묶음을 삭제할까요?')) return;
+  data.bundles = (data.bundles || []).filter(b => b.id !== id);
+  saveData();
+  renderAdminBundles();
+  renderSidebarBundleBtn();
+  showToast('삭제됐습니다.');
+}
+
 let _selectedProdId = null;
 
 function renderAdminProducts() {
