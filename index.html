@@ -4046,7 +4046,7 @@ async function analyzeProductWithAI() {
     // 필드명 통일 (Worker가 suggestedEmoji/suggestedBadges로 반환할 수도 있음)
     const rEmoji  = result.emoji  || result.suggestedEmoji;
     const rBadges = result.badges || result.suggestedBadges;
-    if (result.name)   $('#prod-edit-name').value    = result.name;
+    // ⚠️ 제품명(name)은 절대 덮어쓰지 않음 — 사용자가 입력한 정확한 이름 유지
     if (result.tagline) $('#prod-edit-tagline').value = result.tagline;
     if (result.pharmacistNote || result.note)
       $('#prod-edit-note').value = result.pharmacistNote || result.note;
