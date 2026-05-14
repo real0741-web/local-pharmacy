@@ -4041,14 +4041,17 @@ async function analyzeProductWithAI() {
     if (result.error) throw new Error(result.error);
 
     // 결과 적용
+    // 필드명 통일 (Worker가 suggestedEmoji/suggestedBadges로 반환할 수도 있음)
+    const rEmoji  = result.emoji  || result.suggestedEmoji;
+    const rBadges = result.badges || result.suggestedBadges;
     if (result.name)   $('#prod-edit-name').value    = result.name;
     if (result.tagline) $('#prod-edit-tagline').value = result.tagline;
     if (result.pharmacistNote || result.note)
       $('#prod-edit-note').value = result.pharmacistNote || result.note;
     if (result.info)   $('#prod-edit-info').value    = result.info;
-    if (result.emoji)  { $('#prod-edit-emoji').value = result.emoji; updateImgPreview(); }
-    if (result.badges && Array.isArray(result.badges))
-      $('#prod-edit-badges').value = result.badges.join(', ');
+    if (rEmoji)  { $('#prod-edit-emoji').value = rEmoji; updateImgPreview(); }
+    if (rBadges && Array.isArray(rBadges) && rBadges.length)
+      $('#prod-edit-badges').value = rBadges.join(', ');
 
     // 분류 자동 선택
     if (result.suggestedCategoryId) {
