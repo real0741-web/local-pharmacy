@@ -3396,13 +3396,15 @@ function _fillProduct({ name='', brand='', qty='', info='', imageUrl='', note=''
 
 function _parseEDrug(item) {
   const strip = s => (s||'').replace(/<[^>]+>/g, '').trim();
-  const name  = item.itemName || '';
-  const brand = item.entpName || '';
+  const name     = item.itemName || '';
+  const entpName = item.entpName || '';
+  const brand    = ''; // 회사명은 tagline 아닌 info에 포함
   const efcy  = strip(item.efcyQesitm).slice(0, 150);
   const use   = strip(item.useMethodQesitm).slice(0, 100);
   const warn  = strip(item.atpnQesitm || item.atpnWarnQesitm).slice(0, 120);
   const se    = strip(item.seQesitm).slice(0, 100);
   const info  = [
+    entpName && `제조사: ${entpName}`,
     efcy && `효능효과: ${efcy}`,
     use  && `용법용량: ${use}`,
     se   && `부작용: ${se}`,
