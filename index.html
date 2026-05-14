@@ -4304,4 +4304,47 @@ async function checkTelegramWebhook() {
     const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
     const json = await res.json();
     const url = json.result?.url || '(미등록)';
-    if (statusEl) { s
+    if (statusEl) { statusEl.textContent = '🔗 ' + url; statusEl.style.color = '#0f766e'; }
+    showToast('웹훅 URL: ' + url);
+  } catch(err) {
+    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
+  }
+}
+
+/* ─── 페이지 로드 시 KV 자동 동기화 ─── */
+(async function autoSyncOnLoad() {
+  try {
+    const res = await fetch(`${PROXY}/?action=getData`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return;
+    const remote = await res.json();
+    if (!remote || remote.error || !remote.products) return;
+
+    // KV 데이터가 localStorage보다 최신이면 업데이트
+    const localSavedAt = data._savedAt || 0;
+    const remoteSavedAt = remote._savedAt || 0;
+    if (remoteSavedAt > localSavedAt || !localSavedAt) {
+      data = migrate(remote);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      currentCat = data.categories[0]?.id || 'hot';
+      applyHeader();
+      renderCategories();
+      renderProducts();
+      renderSidebarBundleBtn();
+    }
+  } catch(_) {
+    // 네트워크 오류는 조용히 무시 (오프라인 환경 대응)
+  }
+})();
+
+// 초기 렌더링
+applyHeader();
+renderCategories();
+renderProducts();
+renderSidebarBundleBtn();
+updateCartUI();
+</script>
+</body>
+</html>
