@@ -4348,6 +4348,15 @@ renderCategories();
 renderProducts();
 renderSidebarBundleBtn();
 updateCartUI();
+
+// ── 관리자 세션 복구 & URL 파라미터 처리 ──
+if (sessionStorage.getItem('pharm_admin_session') === '1') {
+  // 새로고침해도 관리자 모드 유지
+  enterAdmin();
+} else if (_adminUrlMode) {
+  // ?mode=admin 또는 #admin → PIN 입력창 자동 오픈
+  openAdminLogin();
+}
 </script>
 </body>
 </html>
