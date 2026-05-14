@@ -4036,8 +4036,9 @@ async function analyzeProductWithAI() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageData: imageData || '', productName, categories }),
     });
-    if (!res.ok) throw new Error('서버 오류 ' + res.status);
+    if (!res.ok) { let errMsg = '서버 오류 ' + res.status; try { const errJson = await res.json(); errMsg = errJson.error || errMsg; } catch(_) {} throw new Error(errMsg); }
     const result = await res.json();
+    if (result.error) throw new Error(result.error);
 
     // 결과 적용
     if (result.name)   $('#prod-edit-name').value    = result.name;
@@ -4303,72 +4304,4 @@ async function checkTelegramWebhook() {
     const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
     const json = await res.json();
     const url = json.result?.url || '(미등록)';
-    if (statusEl) { statusEl.textContent = '웹훅 URL: ' + url; statusEl.style.color = '#0f766e'; }
-  } catch(err) {
-    if (statusEl) { statusEl.textContent = '❌ 확인 실패'; statusEl.style.color = '#dc2626'; }
-  }
-}
-
-async function deleteTelegramWebhook() {
-  if (!confirm('웹훅을 해제하시겠습니까?')) return;
-  const statusEl = $('#webhook-status');
-  try {
-    const res = await fetch(`${PROXY}/?action=deleteWebhook`, { method: 'POST' });
-    const json = await res.json();
-    if (json.ok) {
-      if (statusEl) { statusEl.textContent = '✅ 웹훅 해제됨'; statusEl.style.color = '#64748b'; }
-      showToast('✅ 웹훅 해제됨');
-    } else {
-      throw new Error(json.description || '해제 실패');
-    }
-  } catch(err) {
-    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
-    showToast('❌ 웹훅 해제 실패: ' + err.message);
-  }
-}
-
-/* ─── 페이지 초기화 ─────────────────────────────────────────────── */
-applyHeader();
-renderCategories();
-renderProducts();
-renderSidebarBundleBtn();
-
-if (_adminUrlMode) openAdminLogin();
-else if (sessionStorage.getItem('pharm_admin_session')) enterAdmin();
-
-checkQRValidity();
-
-/* localStorage가 비어있거나 기본값이면 Cloudflare KV에서 자동 복구 시도 */
-(async () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // 커스텀 PIN이나 제품이 있으면 복구 불필요
-      if (parsed.settings && (parsed.settings.adminPin !== DEFAULT_DATA.settings.adminPin
-          || (parsed.products && parsed.products.length > DEFAULT_DATA.products.length))) {
-        return;
-      }
-    }
-    // 기본값 상태이면 KV에서 복구 시도
-    const res = await fetch(PROXY + '/?action=getData', { cache: 'no-store' });
-    if (!res.ok) return;
-    const restored = await res.json();
-    if (!restored || restored.error || !restored.settings) return;
-    if (restored.settings.adminPin === DEFAULT_DATA.settings.adminPin
-        && (!restored.products || restored.products.length <= DEFAULT_DATA.products.length)) return;
-    data = migrate(restored);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    currentCat = data.categories[0]?.id || 'hot';
-    applyHeader();
-    renderCategories();
-    renderProducts();
-    renderSidebarBundleBtn();
-    showToast('✅ 클라우드 백업에서 자동 복구됨!');
-  } catch(e) {
-    console.warn('KV 자동 복구 실패:', e);
-  }
-})();
-</script>
-</body>
-</html>
+    if (statusEl) { s
