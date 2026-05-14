@@ -4012,6 +4012,71 @@ function applyImageUrl() {
   img.src = url;
 }
 
+/* ─── AI 제품 분석 ─── */
+async function analyzeProductWithAI() {
+  const imageData = $('#prod-edit-image').value || $('#prod-img-url').value.trim() || '';
+  const productName = ($('#prod-edit-name').value || '').trim();
+  const statusEl = $('#ai-analyze-status');
+  const btn = $('#ai-analyze-btn');
+
+  if (!imageData && !productName) {
+    showToast('📸 사진 URL이나 제품명을 먼저 입력해주세요');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '🤖 AI 분석 중...';
+  statusEl.classList.remove('hidden');
+  statusEl.textContent = imageData ? '사진 분석 중...' : '제품 정보 검색 중...';
+
+  try {
+    const categories = data.categories.map(c => ({ id: c.id, name: c.name }));
+    const res = await fetch(PROXY + '/?action=analyzeProduct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: imageData || '', productName, categories }),
+    });
+    if (!res.ok) throw new Error('서버 오류 ' + res.status);
+    const result = await res.json();
+
+    // 결과 적용
+    if (result.name)   $('#prod-edit-name').value    = result.name;
+    if (result.tagline) $('#prod-edit-tagline').value = result.tagline;
+    if (result.pharmacistNote || result.note)
+      $('#prod-edit-note').value = result.pharmacistNote || result.note;
+    if (result.info)   $('#prod-edit-info').value    = result.info;
+    if (result.emoji)  { $('#prod-edit-emoji').value = result.emoji; updateImgPreview(); }
+    if (result.badges && Array.isArray(result.badges))
+      $('#prod-edit-badges').value = result.badges.join(', ');
+
+    // 분류 자동 선택
+    if (result.suggestedCategoryId) {
+      const sel = $('#prod-edit-cat');
+      if (sel) {
+        const opt = [...sel.options].find(o => o.value === result.suggestedCategoryId);
+        if (opt) sel.value = result.suggestedCategoryId;
+      }
+    }
+
+    // 이미지 URL 반환된 경우 적용
+    if (result.imageUrl && !imageData) {
+      $('#prod-edit-image').value = result.imageUrl;
+      updateImgPreview();
+    }
+
+    const src = result._source || '';
+    statusEl.textContent = `✅ 완료${src ? ' (' + src + ')' : ''}`;
+    showToast('🤖 AI 분석 완료! 내용을 확인하고 필요한 부분만 수정하세요.');
+  } catch(e) {
+    statusEl.textContent = '❌ 분석 실패: ' + e.message;
+    showToast('❌ AI 분석 실패: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력';
+    setTimeout(() => statusEl.classList.add('hidden'), 4000);
+  }
+}
+
 /* ─── 카메라 바코드 스캔 (html5-qrcode) ─── */
 let _html5QrCode = null;
 async function startBarcodeCamera() {
