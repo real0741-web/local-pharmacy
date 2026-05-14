@@ -3398,21 +3398,22 @@ function _parseEDrug(item) {
   const strip = s => (s||'').replace(/<[^>]+>/g, '').trim();
   const name     = item.itemName || '';
   const entpName = item.entpName || '';
-  const brand    = ''; // 회사명은 tagline 아닌 info에 포함
-  const efcy  = strip(item.efcyQesitm).slice(0, 150);
-  const use   = strip(item.useMethodQesitm).slice(0, 100);
+  const brand    = ''; // 회사명은 tagline에 넣지 않음
+  const ingr  = strip(item.mainIngr || item.material || '').slice(0, 80);
+  const use   = strip(item.useMethodQesitm).slice(0, 120);
   const warn  = strip(item.atpnQesitm || item.atpnWarnQesitm).slice(0, 120);
-  const se    = strip(item.seQesitm).slice(0, 100);
+
+  // info: 성분+복용방법만 (효능효과·부작용·제조사 제외 — 복약지도에서 자연스럽게 전달)
   const info  = [
-    entpName && `제조사: ${entpName}`,
-    efcy && `효능효과: ${efcy}`,
-    use  && `용법용량: ${use}`,
-    se   && `부작용: ${se}`,
+    ingr && `주성분: ${ingr}`,
+    use  && `복용법: ${use}`,
   ].filter(Boolean).join('\n');
+
+  // note(복약지도): 주의사항 중심, 복용법 간략 보완
   const note  = [
     warn && `⚠️ 주의: ${warn}`,
-    use  && `복용법: ${use.slice(0, 80)}`,
   ].filter(Boolean).join('\n');
+
   return { name, brand, qty:'', info, imageUrl: item.itemImage||'', note, source:'e약은요(식약처)' };
 }
 
