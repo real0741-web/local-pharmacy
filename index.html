@@ -4318,46 +4318,62 @@ async function checkTelegramWebhook() {
 }
 
 /* ─── 페이지 로드 시 KV 자동 동기화 ─── */
-(async function autoSyncOnLoad() {
-  try {
-    const res = await fetch(`${PROXY}/?action=getData`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return;
-    const remote = await res.json();
-    if (!remote || remote.error || !remote.products) return;
-
-    // KV 데이터가 localStorage보다 최신이면 업데이트
-    const localSavedAt = data._savedAt || 0;
-    const remoteSavedAt = remote._savedAt || 0;
-    if (remoteSavedAt > localSavedAt || !localSavedAt) {
-      data = migrate(remote);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      currentCat = data.categories[0]?.id || 'hot';
-      applyHeader();
-      renderCategories();
-      renderProducts();
-      renderSidebarBundleBtn();
-    }
-  } catch(_) {
-    // 네트워크 오류는 조용히 무시 (오프라인 환경 대응)
+// ── 실시간 연동: 서버에서 데이터 적용 공통 함수 ──
+async function _applyRemoteData(showToastMsg) {
+  const res = await fetch(`${PROXY}/?action=getData`, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) return false;
+  const remote = await res.json();
+  if (!remote || remote.error || !remote.products?.length) return false;
+  const remoteSavedAt = remote._savedAt || 0;
+  const localSavedAt  = data._savedAt  || 0;
+  if (remoteSavedAt >= localSavedAt) {
+    data = migrate(remote);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    currentCat = data.categories[0]?.id || 'hot';
+    applyHeader();
+    renderCategories();
+    renderProducts();
+    renderSidebarBundleBtn();
+    if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
+    return true;
   }
+  return false;
+}
+
+// 페이지 로드 시 항상 서버 최신 데이터 우선 적용
+(async function autoSyncOnLoad() {
+  try { await _applyRemoteData(false); } catch(_) {}
 })();
+
+// 1분마다 버전만 체크 → 변경됐을 때만 전체 데이터 로딩 (데이터 절약)
+setInterval(async () => {
+  if (isAdmin) return;
+  try {
+    const vRes = await fetch(`${PROXY}/?action=getVersion`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!vRes.ok) return;
+    const { _savedAt: remoteVer } = await vRes.json();
+    if (remoteVer > (data._savedAt || 0)) {
+      await _applyRemoteData(false); // 변경됐을 때만 전체 로딩
+    }
+  } catch(_) {}
+}, 60 * 1000);
 
 // 초기 렌더링
 applyHeader();
 renderCategories();
 renderProducts();
-renderSidebarBundleBtn();
 updateCartUI();
 
 // ── 관리자 세션 복구 & URL 파라미터 처리 ──
 if (sessionStorage.getItem('pharm_admin_session') === '1') {
-  // 새로고침해도 관리자 모드 유지
   enterAdmin();
 } else if (_adminUrlMode) {
-  // ?mode=admin 또는 #admin → PIN 입력창 자동 오픈
   openAdminLogin();
 }
 </script>
