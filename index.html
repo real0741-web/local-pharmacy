@@ -2471,7 +2471,11 @@ function renderAdminProducts() {
   wrap.innerHTML = '';
   if (list.length === 0) {
     wrap.innerHTML = `<div class="card p-6 text-center text-slate-400 text-sm">제품이 없습니다.</div>`;
-    clearProdSelection(); return;
+    // clearProdSelection() 직접 호출 금지 → 무한재귀 방지
+    _selectedProdId = null;
+    const _bar = $('#prod-order-bar');
+    if (_bar) _bar.classList.add('hidden');
+    return;
   }
 
   const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
@@ -4368,6 +4372,7 @@ setInterval(async () => {
 applyHeader();
 renderCategories();
 renderProducts();
+renderSidebarBundleBtn();
 updateCartUI();
 
 // ── 관리자 세션 복구 & URL 파라미터 처리 ──
