@@ -294,7 +294,7 @@
       <!-- 수령 방법 선택 -->
       <div class="mb-3">
         <div class="text-xs font-semibold text-slate-500 mb-2">수령 방법</div>
-        <div class="grid grid-cols-2 gap-2">
+        <div id="delivery-options-grid" class="grid grid-cols-2 gap-2">
           <button id="pickup-btn" onclick="setDeliveryMode('pickup')"
                   class="py-2.5 rounded-xl border-2 border-teal-500 bg-teal-50 text-sm font-semibold text-teal-700">🏪 약국 수령</button>
           <button id="delivery-btn" onclick="setDeliveryMode('delivery')"
@@ -1569,6 +1569,34 @@ function updateCartUI() {
 function toggleCart(open) {
   $('#cart-overlay').classList.toggle('hidden', !open);
   $('#cart-panel').classList.toggle('hidden', !open);
+  if (open) _applyDeliveryVisibility();
+}
+
+// 배송 허용 여부에 따라 배송 버튼 표시/숨김
+function _applyDeliveryVisibility() {
+  const allowed = !!data.settings?.allowDelivery;
+  const deliveryBtn = $('#delivery-btn');
+  const deliveryGrid = $('#delivery-options-grid');
+  if (!deliveryBtn) return;
+  if (allowed) {
+    deliveryBtn.classList.remove('hidden');
+    if (deliveryGrid) deliveryGrid.className = 'grid grid-cols-2 gap-2';
+  } else {
+    deliveryBtn.classList.add('hidden');
+    if (deliveryGrid) deliveryGrid.className = 'grid grid-cols-1 gap-2';
+    if (typeof _deliveryMode !== 'undefined' && _deliveryMode === 'delivery') {
+      setDeliveryMode('pickup');
+    }
+  }
+}
+
+// 배송 허용 설정 저장
+function saveDeliveryToggle() {
+  const el = $('#setting-allow-delivery');
+  if (!el) return;
+  data.settings.allowDelivery = el.checked;
+  saveData();
+  showToast(el.checked ? '✅ 택배 배송 허용됨' : '🚫 택배 배송 숨김 처리됨');
 }
 
 /* ─── 접수번호 자동 발급 ─── */
@@ -4320,228 +4348,4 @@ function fillSettings() {
   if ($('#setting-mfds-key')) $('#setting-mfds-key').value = key;
   const statusEl = $('#mfds-key-status');
   if (statusEl) {
-    statusEl.textContent = key ? '✅ 등록됨 · 앞 8자: ' + key.slice(0, 8) + '***' : '미등록';
-    statusEl.style.color = key ? '#0f766e' : '#94a3b8';
-  }
-}
-
-function saveSettings() {
-  const name = ($('#setting-name')?.value || '').trim();
-  if (!name) { showToast('약국 이름을 입력해주세요'); return; }
-  data.settings.pharmacyName  = name;
-  data.settings.pharmacyPhone = ($('#setting-phone')?.value || '').trim();
-  data.settings.tagline       = ($('#setting-tagline')?.value || '').trim();
-  saveData();
-  applyHeader();
-  showToast('✅ 약국 정보 저장 완료');
-}
-
-function saveDeliveryToggle() {
-  data.settings.allowDelivery = !!$('#setting-allow-delivery')?.checked;
-  saveData();
-  showToast('✅ 수령 방법 저장됨');
-}
-
-function savePayMethods() {
-  data.settings.payMethods = {
-    kakao:   !!$('#pay-toggle-kakao')?.checked,
-    naver:   !!$('#pay-toggle-naver')?.checked,
-    toss:    !!$('#pay-toggle-toss')?.checked,
-    counter: true,
-  };
-  saveData();
-  showToast('✅ 결제 수단 저장됨');
-}
-
-function saveMfdsKey() {
-  const key = ($('#setting-mfds-key')?.value || '').trim();
-  data.settings.mfdsApiKey = key;
-  saveData();
-  fillSettings();
-  showToast(key ? '✅ API 키 저장됨' : '⚠️ API 키가 삭제됐습니다');
-}
-
-function changePin() {
-  const newPin = ($('#setting-pin')?.value || '').trim();
-  if (!newPin) { showToast('새 PIN을 입력해주세요'); return; }
-  if (!/^\d{4,8}$/.test(newPin)) { showToast('PIN은 숫자 4~8자리로 입력해주세요'); return; }
-  data.settings.adminPin = newPin;
-  saveData();
-  if ($('#setting-pin')) $('#setting-pin').value = '';
-  showToast('✅ PIN이 변경됐습니다');
-}
-
-function copyNtfyTopic() {
-  const topic = getNtfyTopic();
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(topic)
-      .then(() => showToast('✅ 코드 복사됨'))
-      .catch(() => showToast('복사 실패 — 직접 선택 후 복사하세요'));
-  } else {
-    showToast('현재 환경에서 복사 기능을 지원하지 않습니다');
-  }
-}
-
-function exportDataJson() {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'pharmacy-data-' + new Date().toISOString().slice(0,10) + '.json';
-  a.click();
-  showToast('📦 data.json 다운로드 시작');
-}
-
-function exportData() { exportDataJson(); }
-
-function importData(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    try {
-      const imported = JSON.parse(ev.target.result);
-      if (!imported || typeof imported !== 'object') throw new Error('올바른 JSON이 아닙니다');
-      data = migrate(imported);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      currentCat = data.categories[0]?.id || 'hot';
-      applyHeader();
-      renderCategories();
-      renderProducts();
-      renderSidebarBundleBtn();
-      showToast('✅ 데이터 불러오기 완료!');
-    } catch(err) {
-      showToast('❌ 파일 오류: ' + err.message);
-    }
-  };
-  reader.readAsText(file, 'utf-8');
-  e.target.value = '';
-}
-
-async function syncFromRemote() {
-  showToast('☁️ 원격에서 불러오는 중...');
-  try {
-    const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const remote = await res.json();
-    if (!remote || remote.error) throw new Error('서버에 저장된 데이터가 없습니다');
-    data = migrate(remote);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    currentCat = data.categories[0]?.id || 'hot';
-    applyHeader();
-    renderCategories();
-    renderProducts();
-    renderSidebarBundleBtn();
-    showToast('✅ 원격 동기화 완료!');
-  } catch(err) {
-    showToast('❌ 동기화 실패: ' + err.message);
-  }
-}
-
-function resetData() {
-  if (!confirm('정말 모든 데이터를 기본값으로 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
-  data = JSON.parse(JSON.stringify(DEFAULT_DATA));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  currentCat = data.categories[0]?.id || 'hot';
-  applyHeader();
-  renderCategories();
-  renderProducts();
-  renderSidebarBundleBtn();
-  showToast('✅ 기본값으로 초기화됐습니다');
-}
-
-/* ─── 텔레그램 웹훅 ─── */
-async function registerTelegramWebhook() {
-  const statusEl = $('#webhook-status');
-  if (statusEl) { statusEl.textContent = '⏳ 등록 중...'; statusEl.style.color = '#64748b'; }
-  try {
-    const res = await fetch(`${PROXY}/?action=registerWebhook`, { method: 'POST' });
-    const json = await res.json();
-    if (json.ok || json.result) {
-      if (statusEl) { statusEl.textContent = '✅ 웹훅 등록 완료'; statusEl.style.color = '#0f766e'; }
-      showToast('✅ 텔레그램 웹훅 등록됨');
-    } else {
-      throw new Error(json.description || '등록 실패');
-    }
-  } catch(err) {
-    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
-    showToast('❌ 웹훅 등록 실패: ' + err.message);
-  }
-}
-
-async function checkTelegramWebhook() {
-  const statusEl = $('#webhook-status');
-  if (statusEl) { statusEl.textContent = '⏳ 확인 중...'; statusEl.style.color = '#64748b'; }
-  try {
-    const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
-    const json = await res.json();
-    const url = json.result?.url || '(미등록)';
-    if (statusEl) { statusEl.textContent = '🔗 ' + url; statusEl.style.color = '#0f766e'; }
-    showToast('웹훅 URL: ' + url);
-  } catch(err) {
-    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
-  }
-}
-
-/* ─── 페이지 로드 시 KV 자동 동기화 ─── */
-// ── 실시간 연동: 서버에서 데이터 적용 공통 함수 ──
-async function _applyRemoteData(showToastMsg) {
-  const res = await fetch(`${PROXY}/?action=getData`, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) return false;
-  const remote = await res.json();
-  if (!remote || remote.error || !remote.products?.length) return false;
-  const remoteSavedAt = remote._savedAt || 0;
-  const localSavedAt  = data._savedAt  || 0;
-  if (remoteSavedAt >= localSavedAt) {
-    data = migrate(remote);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    currentCat = data.categories[0]?.id || 'hot';
-    applyHeader();
-    renderCategories();
-    renderProducts();
-    renderSidebarBundleBtn();
-    if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
-    return true;
-  }
-  return false;
-}
-
-// 페이지 로드 시 항상 서버 최신 데이터 우선 적용
-(async function autoSyncOnLoad() {
-  try { await _applyRemoteData(false); } catch(_) {}
-})();
-
-// 1분마다 버전만 체크 → 변경됐을 때만 전체 데이터 로딩 (데이터 절약)
-setInterval(async () => {
-  if (isAdmin) return;
-  try {
-    const vRes = await fetch(`${PROXY}/?action=getVersion`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!vRes.ok) return;
-    const { _savedAt: remoteVer } = await vRes.json();
-    if (remoteVer > (data._savedAt || 0)) {
-      await _applyRemoteData(false); // 변경됐을 때만 전체 로딩
-    }
-  } catch(_) {}
-}, 60 * 1000);
-
-// 초기 렌더링
-applyHeader();
-renderCategories();
-renderProducts();
-renderSidebarBundleBtn();
-updateCartUI();
-
-// ── 관리자 세션 복구 & URL 파라미터 처리 ──
-if (sessionStorage.getItem('pharm_admin_session') === '1') {
-  enterAdmin();
-} else if (_adminUrlMode) {
-  openAdminLogin();
-}
-</script>
-</body>
-</html>
+    statusEl.textContent = key ? '✅ 등록됨 · 앞 8자: ' + key.slice(0, 8) + '***' : '미
