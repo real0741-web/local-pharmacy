@@ -1516,6 +1516,10 @@ function adjCardQty(id, delta) {
 }
 // 카드에서 수량 지정 후 담기
 function addToCartQty(id) {
+  if (!window._qrPriceVisible) {
+    showToast('🔒 QR코드를 스캔하면 쇼핑하실 수 있어요');
+    return;
+  }
   const el = $(`#cqty-${id}`);
   const qty = el ? Math.max(1, parseInt(el.value) || 1) : 1;
   if (el) el.value = 1; // 담은 후 수량 리셋
@@ -1533,6 +1537,10 @@ function adjDetailQty(delta) {
   el.value = Math.max(1, Math.min(99, (parseInt(el.value) || 1) + delta));
 }
 function addToCart(id) {
+  if (!window._qrPriceVisible) {
+    showToast('🔒 QR코드를 스캔하면 쇼핑하실 수 있어요');
+    return;
+  }
   const item = cart.find(c => c.id === id);
   if (item) item.qty++;
   else cart.push({ id, qty: 1 });
