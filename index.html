@@ -109,6 +109,12 @@
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen">
 
+<!-- 관리자 미리보기 복귀 버튼 -->
+<div id="preview-return-bar" class="hidden fixed top-0 left-0 right-0 z-[55] bg-teal-600 text-white text-center py-2 text-sm font-semibold flex items-center justify-center gap-3">
+  <span>👁 고객 화면 미리보기 중 (가격 표시됨)</span>
+  <button onclick="returnToAdmin()" class="px-3 py-1 rounded-lg bg-white text-teal-700 text-xs font-bold">← 관리자 복귀</button>
+</div>
+
 <!-- ── 첫 방문 로딩 스크린 ── -->
 <div id="init-loading-screen" class="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-white">
   <div class="flex flex-col items-center gap-4">
@@ -490,7 +496,8 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <button onclick="exitAdmin()" class="text-sm px-3 py-2 rounded-lg bg-slate-100">매장 화면 보기</button>
+        <button onclick="previewStore()" class="text-sm px-3 py-2 rounded-lg bg-teal-500 text-white font-semibold">👁 고객 화면 보기</button>
+        <button onclick="exitAdmin()" class="text-sm px-3 py-2 rounded-lg bg-slate-100">로그아웃</button>
       </div>
     </div>
     <!-- 탭 -->
@@ -2077,6 +2084,24 @@ function tryAdminLogin() {
     showToast('PIN이 일치하지 않습니다');
     $('#admin-pin-input').value = '';
   }
+}
+
+
+/* ─── 관리자 고객화면 미리보기 ─── */
+function previewStore() {
+  // 관리자 세션은 유지, 가격도 보이는 채로 고객 화면 표시
+  $('#admin-dashboard').classList.add('hidden');
+  document.body.style.overflow = '';
+  window._qrPriceVisible = true;
+  $('#preview-return-bar').classList.remove('hidden');
+  applyHeader(); renderCategories(); renderProducts();
+  renderSidebarBundleBtn(); updateCartUI();
+}
+
+function returnToAdmin() {
+  $('#preview-return-bar').classList.add('hidden');
+  $('#admin-dashboard').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
 }
 
 function enterAdmin() {
