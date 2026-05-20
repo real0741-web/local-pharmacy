@@ -2148,8 +2148,23 @@ function checkBoardImportParam() {
     if (!raw) return;
     history.replaceState(null, '', location.pathname + (location.hash || ''));
     const json = JSON.parse(decodeURIComponent(atob(raw)));
-    if (json?.source === '약품공유게시판' && json?.drug) setTimeout(() => importFromBoard(json.drug), 400);
+    if (json?.source === '약품공유게시판' && json?.drug) {
+      _tryBoardImport(json.drug, 0);
+    }
   } catch(e) {}
+}
+
+function _tryBoardImport(drugData, attempt) {
+  // 분류가 로드될 때까지 최대 10초(500ms×20) 재시도
+  if (data.categories && data.categories.length > 0) {
+    importFromBoard(drugData);
+    return;
+  }
+  if (attempt >= 20) {
+    showToast('⚠️ 키오스크 데이터 로딩이 늦어져 가져오기를 취소했습니다. 다시 시도해 주세요.');
+    return;
+  }
+  setTimeout(() => _tryBoardImport(drugData, attempt + 1), 500);
 }
 function exitAdmin() {
   isAdmin = false;
