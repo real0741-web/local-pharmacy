@@ -2121,6 +2121,41 @@ function enterAdmin() {
   document.body.style.overflow = 'hidden';
   startOrderListener();       // 실시간 수신 시작
   fetchMissedOrders();        // 오프라인 동안 받은 주문 조회
+
+  // ── 게시판에서 가져오기: ?importDrug=BASE64 처리 ──
+  const _importParam = new URLSearchParams(location.search).get('importDrug');
+  if (_importParam) {
+    try {
+      const importData = JSON.parse(decodeURIComponent(atob(_importParam)));
+      if (importData?.drug) {
+        const d = importData.drug;
+        setTimeout(() => {
+          switchAdminTab('products');
+          openProductEditor(null); // 새 제품 편집창 오픈
+          // 필드 채우기
+          if (d.name)           $('#prod-edit-name').value    = d.name;
+          if (d.emoji)          { $('#prod-edit-emoji').value = d.emoji; updateImgPreview(); }
+          if (d.tagline)        $('#prod-edit-tagline').value  = d.tagline;
+          if (d.info)           $('#prod-edit-info').value     = d.info;
+          if (d.pharmacistNote) $('#prod-edit-note').value     = d.pharmacistNote;
+          if (d.imageUrl)       { $('#prod-edit-image').value  = d.imageUrl; updateImgPreview(); }
+          // 분류 자동 선택
+          if (d.cat) {
+            const sel = $('#prod-edit-cat');
+            if (sel) {
+              const opt = [...sel.options].find(o => o.value === d.cat || o.text.includes(d.cat));
+              if (opt) sel.value = opt.value;
+            }
+          }
+          showToast('📥 게시판에서 가져온 약품이 편집창에 입력됐어요! 확인 후 저장하세요.');
+          // URL에서 파라미터 제거 (뒤로가기 오염 방지)
+          history.replaceState(null, '', location.pathname + '?mode=admin');
+        }, 300);
+      }
+    } catch(e) {
+      console.warn('importDrug 파싱 실패:', e);
+    }
+  }
 }
 function exitAdmin() {
   isAdmin = false;
@@ -2566,6 +2601,7 @@ function renderAdminProducts() {
       </div>
       <div class="flex items-center gap-1 shrink-0">
         <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+        <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
         <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
       </div>`;
     wrap.appendChild(row);
@@ -4143,6 +4179,62 @@ async function analyzeProductWithAI() {
     btn.disabled = false;
     btn.textContent = '🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력';
     setTimeout(() => statusEl.classList.add('hidden'), 4000);
+  }
+}
+
+/* ─── 게시판에 약품 공유 ─── */
+async function shareToBoard(productId) {
+  const p = data.products.find(x => x.id === productId);
+  if (!p) { showToast('제품을 찾을 수 없습니다.'); return; }
+
+  const catObj = data.categories.find(c => c.id === p.cat);
+  const catName = catObj ? catObj.name : '기타';
+
+  // shopId 확인 (1호점/2호점)
+  const shopId = data.settings?.shopId || 'shop1';
+  const shopName = shopId === 'shop2' ? '2호점' : '1호점';
+
+  // func_tags: badges 배열 활용
+  const funcTags = Array.isArray(p.badges) ? p.badges.filter(Boolean) : [];
+
+  const confirmed = confirm(
+    `"${p.name}"을(를) 약품 공유 게시판에 공유할까요?\n\n` +
+    `• 게시판에 새 약품으로 등록됩니다.\n` +
+    `• 약사 한마디·효능·용법이 함께 올라갑니다.\n` +
+    `• 등록 약국: ${shopName}`
+  );
+  if (!confirmed) return;
+
+  showToast('📤 게시판에 공유 중...');
+
+  try {
+    const res = await fetch(PROXY + '/?action=boardSave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        drug: {
+          canonical_name:    p.name,
+          emoji:             p.emoji             || '💊',
+          category:          catName,
+          manufacturer_name: p.brand             || '기타',
+          func_tags:         funcTags,
+        },
+        version: {
+          pharmacy_name:   shopName,
+          efficacy:        p.tagline             || '',
+          dosage:          p.info                || '',
+          pharmacist_note: p.pharmacistNote      || null,
+          image_url:       p.image               || null,
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.error || '공유 실패');
+    showToast('✅ 게시판에 공유 완료! "' + p.name + '"');
+  } catch(e) {
+    showToast('❌ 공유 실패: ' + e.message);
+    console.error('[shareToBoard]', e);
   }
 }
 
