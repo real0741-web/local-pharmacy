@@ -2121,41 +2121,35 @@ function enterAdmin() {
   document.body.style.overflow = 'hidden';
   startOrderListener();       // 실시간 수신 시작
   fetchMissedOrders();        // 오프라인 동안 받은 주문 조회
+  checkBoardImportParam();    // 게시판 가져오기 파라미터 확인
+}
 
-  // ── 게시판에서 가져오기: ?importDrug=BASE64 처리 ──
-  const _importParam = new URLSearchParams(location.search).get('importDrug');
-  if (_importParam) {
-    try {
-      const importData = JSON.parse(decodeURIComponent(atob(_importParam)));
-      if (importData?.drug) {
-        const d = importData.drug;
-        setTimeout(() => {
-          switchAdminTab('products');
-          openProductEditor(null); // 새 제품 편집창 오픈
-          // 필드 채우기
-          if (d.name)           $('#prod-edit-name').value    = d.name;
-          if (d.emoji)          { $('#prod-edit-emoji').value = d.emoji; updateImgPreview(); }
-          if (d.tagline)        $('#prod-edit-tagline').value  = d.tagline;
-          if (d.info)           $('#prod-edit-info').value     = d.info;
-          if (d.pharmacistNote) $('#prod-edit-note').value     = d.pharmacistNote;
-          if (d.imageUrl)       { $('#prod-edit-image').value  = d.imageUrl; updateImgPreview(); }
-          // 분류 자동 선택
-          if (d.cat) {
-            const sel = $('#prod-edit-cat');
-            if (sel) {
-              const opt = [...sel.options].find(o => o.value === d.cat || o.text.includes(d.cat));
-              if (opt) sel.value = opt.value;
-            }
-          }
-          showToast('📥 게시판에서 가져온 약품이 편집창에 입력됐어요! 확인 후 저장하세요.');
-          // URL에서 파라미터 제거 (뒤로가기 오염 방지)
-          history.replaceState(null, '', location.pathname + '?mode=admin');
-        }, 300);
-      }
-    } catch(e) {
-      console.warn('importDrug 파싱 실패:', e);
-    }
-  }
+function importFromBoard(drugData) {
+  if (!drugData?.name) { showToast('❌ 가져올 약품 데이터가 없습니다.'); return; }
+  if (!data.categories.length) { alert('먼저 분류를 1개 이상 만들어주세요'); return; }
+  switchAdminTab('products');
+  openProductEditor(null);
+  $('#prod-edit-emoji').value = drugData.emoji || '💊';
+  const sel = $('#prod-edit-cat');
+  const mc = data.categories.find(c => c.name === drugData.cat || c.id === drugData.cat);
+  if (mc) sel.value = mc.id;
+  $('#prod-edit-name').value    = drugData.name           || '';
+  $('#prod-edit-tagline').value = drugData.tagline        || '';
+  $('#prod-edit-note').value    = drugData.pharmacistNote || '';
+  $('#prod-edit-info').value    = drugData.info           || '';
+  $('#prod-edit-image').value   = drugData.imageUrl       || '';
+  updateImgPreview();
+  showToast('📥 게시판에서 가져왔습니다! 가격을 입력하고 저장하세요.');
+}
+
+function checkBoardImportParam() {
+  try {
+    const raw = new URLSearchParams(location.search).get('importDrug');
+    if (!raw) return;
+    history.replaceState(null, '', location.pathname + (location.hash || ''));
+    const json = JSON.parse(decodeURIComponent(atob(raw)));
+    if (json?.source === '약품공유게시판' && json?.drug) setTimeout(() => importFromBoard(json.drug), 400);
+  } catch(e) {}
 }
 function exitAdmin() {
   isAdmin = false;
