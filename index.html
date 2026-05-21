@@ -4569,16 +4569,12 @@ async function _applyRemoteData(showToastMsg) {
     if (res.ok) {
       const remote = await res.json();
       if (remote && !remote.error && remote.products?.length) {
-        const remoteSavedAt = remote._savedAt || 0;
-        const localSavedAt  = data._savedAt  || 0;
-        // 서버 데이터가 로컬보다 최신이거나 로컬에 타임스탬프 없을 때만 덮어씀
-        if (remoteSavedAt >= localSavedAt || !localSavedAt) {
-          data = migrate(remote);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-          currentCat = data.categories[0]?.id || 'hot';
-          applyHeader(); renderCategories(); renderProducts();
-          renderSidebarBundleBtn(); updateCartUI();
-        }
+        // 서버에 데이터가 있으면 항상 적용 (고객 기기는 saveData를 호출하지 않음)
+        data = migrate(remote);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        currentCat = data.categories[0]?.id || 'hot';
+        applyHeader(); renderCategories(); renderProducts();
+        renderSidebarBundleBtn(); updateCartUI();
       }
     }
   } catch(_) {
