@@ -4474,11 +4474,12 @@ async function registerTelegramWebhook() {
   try {
     const res = await fetch(`${PROXY}/?action=registerWebhook`, { method: 'POST' });
     const json = await res.json();
-    if (json.ok || json.result) {
+    if (json.ok || json.result === true) {
       if (statusEl) { statusEl.textContent = '✅ 웹훅 등록 완료'; statusEl.style.color = '#0f766e'; }
       showToast('✅ 텔레그램 웹훅 등록됨');
     } else {
-      throw new Error(json.description || '등록 실패');
+      // Worker가 {ok:false, error:'...'} 또는 Telegram이 {ok:false, description:'...'} 반환
+      throw new Error(json.description || json.error || '등록 실패 (Worker 응답 없음)');
     }
   } catch(err) {
     if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
