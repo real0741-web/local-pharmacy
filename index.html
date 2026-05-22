@@ -929,6 +929,14 @@
       <label>설명 (한 줄)</label>
       <input id="cat-edit-desc" type="text" placeholder="예: 대용량·고함량 제품을 가장 합리적인 가격에" />
     </div>
+    <div class="field">
+      <label>🏷️ 소분류 목록 <span class="text-xs text-slate-400 font-normal">(제품 등록 시 드롭다운으로 선택)</span></label>
+      <div id="cat-edit-subs-list" class="flex flex-wrap gap-1.5 mb-2 min-h-[28px]"></div>
+      <div class="flex gap-2">
+        <input id="cat-edit-sub-input" type="text" placeholder="소분류 이름 입력 후 추가" class="flex-1 text-sm" onkeydown="if(event.key==='Enter'){event.preventDefault();addCatSub();}" />
+        <button type="button" onclick="addCatSub()" class="btn-secondary px-3 text-sm shrink-0">+ 추가</button>
+      </div>
+    </div>
     <div class="grid grid-cols-2 gap-2 mt-2">
       <button onclick="closeCatEditor()" class="btn-secondary">취소</button>
       <button onclick="saveCat()" class="btn-primary">저장</button>
@@ -1090,7 +1098,7 @@
     </div>
     <div class="field">
       <label>분류</label>
-      <select id="prod-edit-cat"></select>
+      <select id="prod-edit-cat" onchange="updateGroupOptions(this.value,'')"></select>
     </div>
     <div class="field">
       <label>제품명</label>
@@ -1119,6 +1127,12 @@
         <label>배지 (콤마 구분)</label>
         <input id="prod-edit-badges" type="text" placeholder="대용량, 함량 1위" />
       </div>
+    </div>
+    <div class="field" id="prod-group-field" style="display:none">
+      <label>🏷️ 소분류</label>
+      <select id="prod-edit-group" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white">
+        <option value="">— 소분류 없음 —</option>
+      </select>
     </div>
     <div class="field">
       <label>💊 복약지도 (접수증·주문서에 자동 표시)</label>
@@ -1290,8 +1304,9 @@ function migrate(d) {
 function saveData() {
   data._savedAt = Date.now(); // 저장 시각 기록 (덮어쓰기 방지용)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  // Cloudflare KV에 백그라운드 동기화
-  fetch(`${PROXY}/?action=saveData`, {
+  // Cloudflare KV에 백그라운드 동기화 (shopId 반드시 포함!)
+  const _shopId = data.settings?.shopId || 'shop1';
+  fetch(`${PROXY}/?action=saveData&shopId=${_shopId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -1457,7 +1472,37 @@ function renderProducts() {
 }
 
 function renderProductCards(list, grid) {
-  list.forEach(p => {
+  const withGroup    = list.filter(p => p.group);
+  const withoutGroup = list.filter(p => !p.group);
+  const groupOrder = [];
+  const groupMap   = {};
+  withGroup.forEach(p => {
+    if (!groupMap[p.group]) { groupMap[p.group] = []; groupOrder.push(p.group); }
+    groupMap[p.group].push(p);
+  });
+  const renderGroup = (label) => {
+    const header = document.createElement('div');
+    header.className = 'col-span-full';
+    header.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;padding:6px 10px;background:var(--brand-soft);border-radius:10px;font-size:13px;font-weight:700;color:var(--brand);">
+      <span style="font-size:15px;">🏷️</span> ${label}
+    </div>`;
+    grid.appendChild(header);
+  };
+  groupOrder.forEach(label => {
+    renderGroup(label);
+    groupMap[label].forEach(p => appendProductCard(p, grid));
+  });
+  if (withoutGroup.length && groupOrder.length) {
+    const header = document.createElement('div');
+    header.className = 'col-span-full';
+    header.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;padding:6px 10px;background:#f8fafc;border-radius:10px;border:1px dashed #e2e8f0;font-size:13px;font-weight:600;color:#94a3b8;"><span>📦</span> 기타</div>`;
+    grid.appendChild(header);
+  }
+  withoutGroup.forEach(p => appendProductCard(p, grid));
+}
+
+function appendProductCard(p, grid) {
+
     const discount = p.list ? Math.round((1 - p.price / p.list) * 100) : 0;
     const card = document.createElement('div');
     card.className = 'card overflow-hidden cursor-pointer';
@@ -1504,7 +1549,6 @@ function renderProductCards(list, grid) {
       </div>
     `;
     grid.appendChild(card);
-  });
 }
 
 /* 카트 */
@@ -2308,19 +2352,61 @@ function openCatEditor(id) {
   $('#cat-edit-name').value  = editing?.name  || '';
   $('#cat-edit-desc').value  = editing?.desc  || '';
   updateCatEmojiPreview();
+  _catEditSubs = editing?.subs ? [...editing.subs] : [];
+  renderCatSubs();
   $('#cat-editor-overlay').classList.remove('hidden');
 }
 function closeCatEditor() { $('#cat-editor-overlay').classList.add('hidden'); }
+
+let _catEditSubs = [];
+function renderCatSubs() {
+  const el = $('#cat-edit-subs-list');
+  if (!el) return;
+  el.innerHTML = _catEditSubs.length === 0
+    ? '<span class="text-xs text-slate-400 italic">소분류 없음</span>'
+    : _catEditSubs.map((s, i) => `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+              style="background:var(--brand-soft);color:var(--brand);">
+          🏷️ ${s}
+          <button type="button" onclick="removeCatSub(${i})"
+            class="ml-0.5 text-slate-400 hover:text-red-500 font-bold leading-none">×</button>
+        </span>`).join('');
+}
+function addCatSub() {
+  const inp = $('#cat-edit-sub-input');
+  const val = inp.value.trim();
+  if (!val) return;
+  if (_catEditSubs.includes(val)) { showToast('이미 있는 소분류예요'); return; }
+  _catEditSubs.push(val);
+  inp.value = '';
+  renderCatSubs();
+}
+function removeCatSub(idx) {
+  _catEditSubs.splice(idx, 1);
+  renderCatSubs();
+}
+function updateGroupOptions(catId, currentGroup) {
+  const cat  = data.categories.find(c => c.id === catId);
+  const subs = cat?.subs || [];
+  const field = $('#prod-group-field');
+  const sel   = $('#prod-edit-group');
+  if (!field || !sel) return;
+  if (subs.length === 0) { field.style.display = 'none'; sel.value = ''; return; }
+  field.style.display = '';
+  sel.innerHTML = '<option value="">— 소분류 없음 —</option>' +
+    subs.map(s => `<option value="${s}" ${s === currentGroup ? 'selected' : ''}>${s}</option>`).join('');
+}
 function saveCat() {
   const id    = $('#cat-edit-id').value;
   const emoji = $('#cat-edit-emoji').value.trim();
   const name  = $('#cat-edit-name').value.trim();
   const desc  = $('#cat-edit-desc').value.trim();
   if (!name) { alert('분류 이름은 필수입니다'); return; }
+  const subs = _catEditSubs.filter(Boolean);
   if (id) {
-    Object.assign(data.categories.find(c => c.id === id), { emoji, name, desc });
+    Object.assign(data.categories.find(c => c.id === id), { emoji, name, desc, subs });
   } else {
-    data.categories.push({ id: 'c_' + Date.now().toString(36), emoji, name, desc });
+    data.categories.push({ id: 'c_' + Date.now().toString(36), emoji, name, desc, subs });
   }
   saveData(); closeCatEditor(); renderAdminCats();
 }
@@ -2706,6 +2792,7 @@ function openProductEditor(id) {
   $('#prod-edit-info').value     = editing?.info     || '';
   $('#prod-edit-price-hidden').checked = editing?.priceHidden || false;
   $('#prod-edit-hidden').checked       = editing?.hidden      || false;
+  updateGroupOptions(editing?.cat || data.categories[0]?.id, editing?.group || '');
   $('#prod-edit-image').value    = editing?.image    || '';
   $('#barcode-input').value      = '';
   $('#drug-name-input').value    = '';
@@ -2800,6 +2887,7 @@ function saveProduct() {
     info:          $('#prod-edit-info').value.trim(),
     priceHidden:   $('#prod-edit-price-hidden').checked,
     hidden:        $('#prod-edit-hidden').checked,
+    group:         $('#prod-edit-group').value.trim(),
     image:         $('#prod-edit-image').value || '',
   };
   if (id) {
@@ -4179,7 +4267,12 @@ async function analyzeProductWithAI() {
     }
 
     const src = result._source || '';
-    statusEl.textContent = `✅ 완료${src ? ' (' + src + ')' : ''}`;
+    statusEl.innerHTML =
+      `<span style="color:#16a34a;font-weight:600;">✅ 완료${src ? ' (' + src + ')' : ''}</span>` +
+      `<button type="button" onclick="shareToBoardFromAI()" ` +
+      `style="margin-left:8px;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;` +
+      `color:#fff;background:linear-gradient(135deg,#0d9488,#0891b2);border:none;cursor:pointer;">` +
+      `📤 게시판에 공유</button>`;
     showToast('🤖 AI 분석 완료! 내용을 확인하고 필요한 부분만 수정하세요.');
   } catch(e) {
     statusEl.textContent = '❌ 분석 실패: ' + e.message;
@@ -4187,7 +4280,77 @@ async function analyzeProductWithAI() {
   } finally {
     btn.disabled = false;
     btn.textContent = '🤖 AI 분석 — 사진 보고 제품명·복약지도 자동 입력';
-    setTimeout(() => statusEl.classList.add('hidden'), 4000);
+    // 성공 시엔 게시판 공유 버튼이 statusEl에 있으므로 바로 숨기지 않음
+    if (!statusEl.querySelector('button')) {
+      setTimeout(() => statusEl.classList.add('hidden'), 4000);
+    }
+  }
+}
+
+/* ─── AI 분석 직후 게시판 공유 (미저장 상태에서 바로 공유) ─── */
+async function shareToBoardFromAI() {
+  const name = ($('#prod-edit-name')?.value || '').trim();
+  if (!name) { showToast('❌ 제품명을 먼저 입력해주세요'); return; }
+
+  const emoji      = $('#prod-edit-emoji')?.value  || '💊';
+  const tagline    = $('#prod-edit-tagline')?.value || '';
+  const info       = $('#prod-edit-info')?.value    || '';
+  const note       = $('#prod-edit-note')?.value    || '';
+  const imageUrl   = $('#prod-img-url')?.value.trim() || $('#prod-edit-image')?.value || '';
+  const badgesRaw  = $('#prod-edit-badges')?.value  || '';
+  const funcTags   = badgesRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  const catSel   = $('#prod-edit-cat');
+  const catId    = catSel?.value || '';
+  const catObj   = data.categories.find(c => c.id === catId);
+  const catName  = catObj ? catObj.name : '기타';
+
+  const shopId   = data.settings?.shopId || 'shop1';
+  const shopName = shopId === 'shop2' ? '2호점' : '1호점';
+
+  const confirmed = confirm(
+    `"${name}"을(를) 약품 공유 게시판에 공유할까요?\n\n` +
+    `• AI 분석 결과가 게시판에 등록됩니다.\n` +
+    `• 약사 한마디·효능·용법이 함께 올라갑니다.\n` +
+    `• 등록 약국: ${shopName}`
+  );
+  if (!confirmed) return;
+
+  showToast('📤 게시판에 공유 중...');
+
+  try {
+    const res = await fetch(PROXY + '/?action=boardSave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        drug: {
+          canonical_name:    name,
+          emoji:             emoji,
+          category:          catName,
+          manufacturer_name: '기타',
+          func_tags:         funcTags,
+        },
+        version: {
+          pharmacy_name:   shopName,
+          efficacy:        tagline,
+          dosage:          info,
+          pharmacist_note: note || null,
+          image_url:       imageUrl || null,
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.error || '공유 실패');
+    showToast('✅ 게시판에 공유 완료! "' + name + '"');
+    // 버튼을 "공유 완료"로 변경
+    const statusEl = $('#ai-analyze-status');
+    if (statusEl) {
+      const shareBtn = statusEl.querySelector('button');
+      if (shareBtn) { shareBtn.textContent = '✅ 공유 완료'; shareBtn.disabled = true; }
+    }
+  } catch(e) {
+    showToast('❌ 공유 실패: ' + e.message);
   }
 }
 
@@ -4493,107 +4656,4 @@ async function checkTelegramWebhook() {
   try {
     const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
     const json = await res.json();
-    const url = json.result?.url || '(미등록)';
-    if (statusEl) { statusEl.textContent = '🔗 ' + url; statusEl.style.color = '#0f766e'; }
-    showToast('웹훅 URL: ' + url);
-  } catch(err) {
-    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
-  }
-}
-
-/* ─── 페이지 로드 시 KV 자동 동기화 ─── */
-
-/* ─── 실시간 서버 동기화 ─── */
-async function _applyRemoteData(showToastMsg) {
-  try {
-    const res = await fetch(`${PROXY}/?action=getData`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return false;
-    const remote = await res.json();
-    if (!remote || remote.error || !remote.products?.length) return false;
-    const remoteSavedAt = remote._savedAt || 0;
-    const localSavedAt  = data._savedAt  || 0;
-    if (remoteSavedAt >= localSavedAt) {
-      data = migrate(remote);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      currentCat = data.categories[0]?.id || 'hot';
-      applyHeader(); renderCategories(); renderProducts(); renderSidebarBundleBtn();
-      if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
-      return true;
-    }
-    return false;
-  } catch(_) { return false; }
-}
-
-/* 1분마다 버전 체크 → 변경 시에만 전체 로드 */
-(function startVersionPolling() {
-  let _lastVersion = data._savedAt || 0;
-  setInterval(async () => {
-    try {
-      const r = await fetch(`${PROXY}/?action=getVersion`, {
-        cache: 'no-store', signal: AbortSignal.timeout(5000),
-      });
-      if (!r.ok) return;
-      const { _savedAt } = await r.json();
-      if (_savedAt && _savedAt > _lastVersion) {
-        _lastVersion = _savedAt;
-        await _applyRemoteData(true);
-      }
-    } catch(_) {}
-  }, 60000); // 1분
-})();
-// ── 앱 초기화: 첫 방문엔 로딩 스크린, 항상 서버 우선 ──
-(async function initApp() {
-  const loadingEl = document.getElementById('init-loading-screen');
-  const hasLocal  = !!(data.products?.length && data._savedAt);
-
-  function hideLoading() {
-    if (loadingEl) loadingEl.style.display = 'none';
-  }
-
-  // localStorage 데이터가 있으면 즉시 렌더 (로딩 스크린 숨김)
-  if (hasLocal) {
-    applyHeader(); renderCategories(); renderProducts();
-    renderSidebarBundleBtn(); updateCartUI();
-    hideLoading();
-  }
-  // 없으면 로딩 스크린 유지하며 서버 대기
-
-  // 서버에서 항상 최신 데이터 가져오기
-  try {
-    const res = await fetch(`${PROXY}/?action=getData`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.ok) {
-      const remote = await res.json();
-      if (remote && !remote.error && remote.products?.length) {
-        // 서버에 데이터가 있으면 항상 적용 (고객 기기는 saveData를 호출하지 않음)
-        data = migrate(remote);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        currentCat = data.categories[0]?.id || 'hot';
-        applyHeader(); renderCategories(); renderProducts();
-        renderSidebarBundleBtn(); updateCartUI();
-      }
-    }
-  } catch(_) {
-    // 네트워크 실패 → localStorage 데이터로 계속
-  }
-
-  // 어떤 경우든 로딩 스크린 제거
-  hideLoading();
-})();
-
-// ── 관리자 세션 복구 & URL 파라미터 처리 ──
-if (sessionStorage.getItem('pharm_admin_session') === '1') {
-  // 새로고침해도 관리자 모드 유지
-  enterAdmin();
-} else if (_adminUrlMode) {
-  // ?mode=admin → PIN 입력창 자동 오픈
-  openAdminLogin();
-}
-</script>
-</body>
-</html>
+    con
