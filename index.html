@@ -1282,6 +1282,7 @@ const DEFAULT_DATA = {
 };
 
 const STORAGE_KEY = 'pharm_warehouse_data_v1';
+const SHOP_ID = 'shop1'; // 1호점 고정 (절대 변경 불가)
 
 /* 데이터 로드/저장 */
 function loadData() {
@@ -1304,9 +1305,8 @@ function migrate(d) {
 function saveData() {
   data._savedAt = Date.now(); // 저장 시각 기록 (덮어쓰기 방지용)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  // Cloudflare KV에 백그라운드 동기화 (shopId 반드시 포함!)
-  const _shopId = data.settings?.shopId || 'shop1';
-  fetch(`${PROXY}/?action=saveData&shopId=${_shopId}`, {
+  // Cloudflare KV에 백그라운드 동기화 (1호점 고정)
+  fetch(`${PROXY}/?action=saveData&shopId=${SHOP_ID}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -4305,8 +4305,7 @@ async function shareToBoardFromAI() {
   const catObj   = data.categories.find(c => c.id === catId);
   const catName  = catObj ? catObj.name : '기타';
 
-  const shopId   = data.settings?.shopId || 'shop1';
-  const shopName = shopId === 'shop2' ? '2호점' : '1호점';
+  const shopName = '1호점';
 
   const confirmed = confirm(
     `"${name}"을(를) 약품 공유 게시판에 공유할까요?\n\n` +
@@ -4362,12 +4361,9 @@ async function shareToBoard(productId) {
   const catObj = data.categories.find(c => c.id === p.cat);
   const catName = catObj ? catObj.name : '기타';
 
-  // shopId 확인 (1호점/2호점)
-  const shopId = data.settings?.shopId || 'shop1';
-  const shopName = shopId === 'shop2' ? '2호점' : '1호점';
-
   // func_tags: badges 배열 활용
   const funcTags = Array.isArray(p.badges) ? p.badges.filter(Boolean) : [];
+  const shopName = '1호점';
 
   const confirmed = confirm(
     `"${p.name}"을(를) 약품 공유 게시판에 공유할까요?\n\n` +
@@ -4601,7 +4597,7 @@ function importData(e) {
 async function syncFromRemote() {
   showToast('☁️ 원격에서 불러오는 중...');
   try {
-    const res = await fetch(`${PROXY}/?action=getData`, { cache: 'no-store' });
+    const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const remote = await res.json();
     if (!remote || remote.error) throw new Error('서버에 저장된 데이터가 없습니다');
@@ -4656,4 +4652,104 @@ async function checkTelegramWebhook() {
   try {
     const res = await fetch(`${PROXY}/?action=getWebhookInfo`);
     const json = await res.json();
-    con
+    const url = json.result?.url || '(미등록)';
+    if (statusEl) { statusEl.textContent = '🔗 ' + url; statusEl.style.color = '#0f766e'; }
+    showToast('웹훅 URL: ' + url);
+  } catch(err) {
+    if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#dc2626'; }
+  }
+}
+
+/* ─── 실시간 서버 동기화 ─── */
+async function _applyRemoteData(showToastMsg) {
+  try {
+    const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return false;
+    const remote = await res.json();
+    if (!remote || remote.error || !remote.products?.length) return false;
+    const remoteSavedAt = remote._savedAt || 0;
+    const localSavedAt  = data._savedAt  || 0;
+    if (remoteSavedAt >= localSavedAt) {
+      data = migrate(remote);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      currentCat = data.categories[0]?.id || 'hot';
+      applyHeader(); renderCategories(); renderProducts(); renderSidebarBundleBtn();
+      if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
+      return true;
+    }
+    return false;
+  } catch(_) { return false; }
+}
+
+/* 1분마다 버전 체크 → 변경 시에만 전체 로드 */
+(function startVersionPolling() {
+  let _lastVersion = data._savedAt || 0;
+  setInterval(async () => {
+    try {
+      const r = await fetch(`${PROXY}/?action=getVersion&shopId=${SHOP_ID}`, {
+        cache: 'no-store', signal: AbortSignal.timeout(5000),
+      });
+      if (!r.ok) return;
+      const { _savedAt } = await r.json();
+      if (_savedAt && _savedAt > _lastVersion) {
+        _lastVersion = _savedAt;
+        await _applyRemoteData(true);
+      }
+    } catch(_) {}
+  }, 60000); // 1분
+})();
+
+// ── 앱 초기화: 첫 방문엔 로딩 스크린, 항상 서버 우선 ──
+(async function initApp() {
+  const loadingEl = document.getElementById('init-loading-screen');
+  const hasLocal  = !!(data.products?.length && data._savedAt);
+
+  function hideLoading() {
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+
+  // localStorage 데이터가 있으면 즉시 렌더 (로딩 스크린 숨김)
+  if (hasLocal) {
+    applyHeader(); renderCategories(); renderProducts();
+    renderSidebarBundleBtn(); updateCartUI();
+    hideLoading();
+  }
+
+  // 서버에서 항상 최신 데이터 가져오기 (1호점 고정)
+  try {
+    const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const remote = await res.json();
+      if (remote && !remote.error && remote.products?.length) {
+        data = migrate(remote);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        currentCat = data.categories[0]?.id || 'hot';
+        applyHeader(); renderCategories(); renderProducts();
+        renderSidebarBundleBtn(); updateCartUI();
+      }
+    }
+  } catch(_) {
+    // 네트워크 실패 → localStorage 데이터로 계속
+  }
+
+  // 어떤 경우든 로딩 스크린 제거
+  hideLoading();
+})();
+
+// ── 관리자 세션 복구 & URL 파라미터 처리 ──
+if (sessionStorage.getItem('pharm_admin_session') === '1') {
+  // 새로고침해도 관리자 모드 유지
+  enterAdmin();
+} else if (_adminUrlMode) {
+  // ?mode=admin 또는 #admin → PIN 입력창 자동 오픈
+  openAdminLogin();
+}
+</script>
+</body>
+</html>
