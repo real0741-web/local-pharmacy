@@ -1842,6 +1842,15 @@ function chooseCounter() {
 let _orderSubmitting = false;
 
 async function selectPayment(method) {
+  // ── 세션 만료 / 비인가 접속 차단 (이중 보안) ──
+  if (!window._qrPriceVisible) {
+    cart = [];
+    updateCartUI();
+    toggleCart(false);
+    showToast('🔒 세션이 만료됐습니다. QR을 다시 스캔해 주세요.');
+    return;
+  }
+
   if (method !== 'counter') {
     showToast('해당 결제수단은 곧 연동될 예정이에요 🔧');
     return;
@@ -3524,6 +3533,10 @@ window._qrPriceVisible = false;
 
 function _expireSession(reason) {
   window._qrPriceVisible = false;
+  // 장바구니 즉시 초기화 — 만료 후 허위 주문 방지
+  cart = [];
+  updateCartUI();
+  toggleCart(false); // 혹시 열려있으면 닫기
   renderProducts();
   const overlay = document.getElementById('closed-overlay');
   if (!overlay) return;
