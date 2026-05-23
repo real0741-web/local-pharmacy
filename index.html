@@ -583,8 +583,11 @@
         <input id="prod-search" type="text" placeholder="🔍 제품명 검색"
                class="flex-1 min-w-[200px] px-3 py-2 border border-slate-200 rounded-lg text-sm"
                oninput="renderAdminProducts()" />
-        <select id="prod-filter" class="px-3 py-2 border border-slate-200 rounded-lg text-sm" onchange="renderAdminProducts()">
+        <select id="prod-filter" class="px-3 py-2 border border-slate-200 rounded-lg text-sm" onchange="onCatFilterChange()">
           <option value="">전체 카테고리</option>
+        </select>
+        <select id="group-filter" class="px-3 py-2 border border-slate-200 rounded-lg text-sm" onchange="renderAdminProducts()">
+          <option value="">전체 소분류</option>
         </select>
       </div>
       <!-- 제품 순서 고정 컨트롤 (sticky) -->
@@ -595,7 +598,7 @@
         <button onclick="moveProdSelected(1)"  class="w-9 h-9 rounded-lg bg-white border border-teal-300 text-teal-700 font-bold text-lg hover:bg-teal-100">↓</button>
         <button onclick="clearProdSelection()" class="w-9 h-9 rounded-lg bg-white border border-slate-200 text-slate-500 text-sm">✕</button>
       </div>
-      <p id="prod-order-hint" class="mb-2 text-xs text-slate-400">💡 제품을 클릭하면 선택되고, 상단 ↑↓ 버튼으로 순서를 바꿀 수 있습니다 · 분류 필터 적용 시 해당 분류 안에서만 이동</p>
+      <p id="prod-order-hint" class="mb-2 text-xs text-slate-400">💡 제품을 클릭하면 선택되고, 상단 ↑↓ 버튼으로 순서를 바꿀 수 있습니다 · 분류/소분류 필터 적용 시 해당 범위 안에서만 이동</p>
       <div id="admin-prod-list" class="flex flex-col gap-2"></div>
     </section>
 
@@ -1483,8 +1486,8 @@ function renderProductCards(list, grid) {
   const renderGroup = (label) => {
     const header = document.createElement('div');
     header.className = 'col-span-full';
-    header.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;padding:6px 10px;background:var(--brand-soft);border-radius:10px;font-size:13px;font-weight:700;color:var(--brand);">
-      <span style="font-size:15px;">🏷️</span> ${label}
+    header.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;padding:8px 12px;background:var(--brand-soft);border-radius:10px;font-size:14px;font-weight:800;color:#0d5c4a;letter-spacing:0.02em;border-left:4px solid var(--brand);">
+      <span style="font-size:16px;">🏷️</span> ${label}
     </div>`;
     grid.appendChild(header);
   };
@@ -2362,15 +2365,30 @@ let _catEditSubs = [];
 function renderCatSubs() {
   const el = $('#cat-edit-subs-list');
   if (!el) return;
+  const last = _catEditSubs.length - 1;
   el.innerHTML = _catEditSubs.length === 0
     ? '<span class="text-xs text-slate-400 italic">소분류 없음</span>'
     : _catEditSubs.map((s, i) => `
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+        <span class="inline-flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-semibold"
               style="background:var(--brand-soft);color:var(--brand);">
+          <button type="button" onclick="moveCatSub(${i},-1)"
+            class="font-bold leading-none px-0.5 hover:opacity-70"
+            style="opacity:${i===0?'0.25':'0.7'};${i===0?'pointer-events:none':''}"
+          >↑</button>
           🏷️ ${s}
+          <button type="button" onclick="moveCatSub(${i},1)"
+            class="font-bold leading-none px-0.5 hover:opacity-70"
+            style="opacity:${i===last?'0.25':'0.7'};${i===last?'pointer-events:none':''}"
+          >↓</button>
           <button type="button" onclick="removeCatSub(${i})"
             class="ml-0.5 text-slate-400 hover:text-red-500 font-bold leading-none">×</button>
         </span>`).join('');
+}
+function moveCatSub(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= _catEditSubs.length) return;
+  [_catEditSubs[idx], _catEditSubs[j]] = [_catEditSubs[j], _catEditSubs[idx]];
+  renderCatSubs();
 }
 function addCatSub() {
   const inp = $('#cat-edit-sub-input');
@@ -2418,6 +2436,29 @@ function populateProdFilter() {
   sel.innerHTML = '<option value="">전체 카테고리</option>' +
     data.categories.map(c => `<option value="${c.id}">${c.emoji} ${c.name}</option>`).join('');
   sel.value = cur;
+  populateGroupFilter();
+}
+function populateGroupFilter() {
+  const catId = $('#prod-filter').value;
+  const gSel  = $('#group-filter');
+  if (!gSel) return;
+  const prev  = gSel.value;
+  const cat   = data.categories.find(c => c.id === catId);
+  const subs  = cat?.subs || [];
+  if (subs.length === 0) {
+    gSel.innerHTML = '<option value="">전체 소분류</option>';
+    gSel.value = '';
+    gSel.style.display = 'none';
+  } else {
+    gSel.style.display = '';
+    gSel.innerHTML = '<option value="">전체 소분류</option>' +
+      subs.map(s => `<option value="${s}">${s}</option>`).join('');
+    gSel.value = subs.includes(prev) ? prev : '';
+  }
+}
+function onCatFilterChange() {
+  populateGroupFilter();
+  renderAdminProducts();
 }
 /* ─── 묶음 특가 (고객화면) ─── */
 function renderSidebarBundleBtn() {
@@ -2647,13 +2688,15 @@ function deleteBundle(id) {
 let _selectedProdId = null;
 
 function renderAdminProducts() {
-  const wrap   = $('#admin-prod-list');
-  const search = ($('#prod-search').value || '').trim().toLowerCase();
-  const filter = $('#prod-filter').value;
+  const wrap    = $('#admin-prod-list');
+  const search  = ($('#prod-search').value || '').trim().toLowerCase();
+  const filter  = $('#prod-filter').value;
+  const gFilter = ($('#group-filter')?.value || '');
 
   let list = data.products.slice();
-  if (filter) list = list.filter(p => p.cat === filter);
-  if (search) list = list.filter(p =>
+  if (filter)  list = list.filter(p => p.cat === filter);
+  if (gFilter) list = list.filter(p => p.group === gFilter);
+  if (search)  list = list.filter(p =>
     (p.name||'').toLowerCase().includes(search) ||
     (p.tagline||'').toLowerCase().includes(search)
   );
@@ -2666,7 +2709,9 @@ function renderAdminProducts() {
     return;
   }
 
-  const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
+  const scopeList = gFilter
+    ? data.products.filter(p => p.group === gFilter)
+    : filter ? data.products.filter(p => p.cat === filter) : data.products;
 
   list.forEach(p => {
     const cat      = data.categories.find(c => c.id === p.cat);
@@ -2723,7 +2768,10 @@ function _updateProdOrderBar() {
   if (!bar) return;
   if (_selectedProdId) {
     const filter    = $('#prod-filter').value;
-    const scopeList = filter ? data.products.filter(p => p.cat === filter) : data.products;
+    const gFilter   = ($('#group-filter')?.value || '');
+    const scopeList = gFilter
+      ? data.products.filter(p => p.group === gFilter)
+      : filter ? data.products.filter(p => p.cat === filter) : data.products;
     const idx       = scopeList.findIndex(p => p.id === _selectedProdId);
     bar.classList.remove('hidden');
     const hint = $('#prod-order-hint');
@@ -2744,21 +2792,18 @@ function moveProdSelected(dir) {
   moveProduct(_selectedProdId, dir);
 }
 function moveProduct(id, dir) {
-  const filter = $('#prod-filter').value;
-  if (filter) {
-    const catIds = data.products.filter(p => p.cat === filter).map(p => p.id);
-    const ci = catIds.indexOf(id);
-    const cj = ci + dir;
-    if (cj < 0 || cj >= catIds.length) return;
-    const gi = data.products.findIndex(p => p.id === catIds[ci]);
-    const gj = data.products.findIndex(p => p.id === catIds[cj]);
-    [data.products[gi], data.products[gj]] = [data.products[gj], data.products[gi]];
-  } else {
-    const i = data.products.findIndex(p => p.id === id);
-    const j = i + dir;
-    if (j < 0 || j >= data.products.length) return;
-    [data.products[i], data.products[j]] = [data.products[j], data.products[i]];
-  }
+  const filter  = $('#prod-filter').value;
+  const gFilter = ($('#group-filter')?.value || '');
+  const scopeIds = (gFilter
+    ? data.products.filter(p => p.group === gFilter)
+    : filter ? data.products.filter(p => p.cat === filter) : data.products
+  ).map(p => p.id);
+  const ci = scopeIds.indexOf(id);
+  const cj = ci + dir;
+  if (ci < 0 || cj < 0 || cj >= scopeIds.length) return;
+  const gi = data.products.findIndex(p => p.id === scopeIds[ci]);
+  const gj = data.products.findIndex(p => p.id === scopeIds[cj]);
+  [data.products[gi], data.products[gj]] = [data.products[gj], data.products[gi]];
   saveData();
   renderAdminProducts();
   requestAnimationFrame(() => {
