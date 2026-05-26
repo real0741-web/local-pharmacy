@@ -1402,6 +1402,7 @@ function renderCategories() {
 }
 
 function selectCategory(id) {
+  _applyPending(); // 대기 중인 새 데이터 있으면 여기서 조용히 적용
   currentCat = id;
   hideBundleView();
   renderCategories();
@@ -2109,6 +2110,7 @@ function openDetail(id) {
   $('#detail-modal').classList.remove('hidden');
 }
 function closeDetail(_skipHistory) {
+  _applyPending(); // 제품 상세 닫을 때 대기 중인 새 데이터 적용
   $('#detail-overlay').classList.add('hidden');
   $('#detail-modal').classList.add('hidden');
   $('#detail-content').innerHTML = '';
@@ -4796,7 +4798,23 @@ async function checkTelegramWebhook() {
 }
 
 /* ─── 실시간 서버 동기화 ─── */
-async function _applyRemoteData(showToastMsg) {
+// 백그라운드에서 받아둔 최신 데이터 (화면 전환 시 적용)
+let _pendingData = null;
+
+// 화면 전환 시점에 대기 중인 데이터 조용히 적용
+function _applyPending() {
+  if (!_pendingData) return;
+  data = _pendingData;
+  _pendingData = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  // 현재 카테고리가 새 데이터에도 있으면 유지, 없으면 첫 번째로
+  if (!data.categories.find(c => c.id === currentCat)) {
+    currentCat = data.categories[0]?.id || 'hot';
+  }
+  applyHeader(); renderCategories(); renderProducts(); renderSidebarBundleBtn();
+}
+
+async function _applyRemoteData(showToastMsg, bgMode = false) {
   try {
     const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
       cache: 'no-store',
@@ -4808,11 +4826,17 @@ async function _applyRemoteData(showToastMsg) {
     const remoteSavedAt = remote._savedAt || 0;
     const localSavedAt  = data._savedAt  || 0;
     if (remoteSavedAt >= localSavedAt) {
-      data = migrate(remote);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      currentCat = data.categories[0]?.id || 'hot';
-      applyHeader(); renderCategories(); renderProducts(); renderSidebarBundleBtn();
-      if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
+      const newData = migrate(remote);
+      if (bgMode) {
+        // 백그라운드 모드: 저장만 하고 화면은 그대로 유지
+        _pendingData = newData;
+      } else {
+        data = newData;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        currentCat = data.categories[0]?.id || 'hot';
+        applyHeader(); renderCategories(); renderProducts(); renderSidebarBundleBtn();
+        if (showToastMsg) showToast('🔄 최신 데이터로 업데이트됐어요');
+      }
       return true;
     }
     return false;
@@ -4831,7 +4855,7 @@ async function _applyRemoteData(showToastMsg) {
       const { _savedAt } = await r.json();
       if (_savedAt && _savedAt > _lastVersion) {
         _lastVersion = _savedAt;
-        await _applyRemoteData(true);
+        await _applyRemoteData(false, true); // bgMode=true: 백그라운드 저장만, 화면 유지
       }
     } catch(_) {}
   }, 60000); // 1분
