@@ -2873,10 +2873,12 @@ function renderAdminProducts() {
           <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-          <button onclick="duplicateProduct('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#fefce8;color:#92400e;border:1px solid #fde68a;" title="이 제품을 복사해서 다른 분류에 새로 추가">📋</button>
-          <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
-          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
+          <div class="grid grid-cols-2 gap-1" style="min-width:112px">
+            <button onclick="openProductEditor('${p.id}')" class="px-2 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold">수정</button>
+            <button onclick="deleteProduct('${p.id}')" class="btn-danger text-xs py-1.5 px-2">삭제</button>
+            <button onclick="duplicateProduct('${p.id}')" class="px-2 py-1.5 rounded-lg text-xs font-semibold" style="background:#fefce8;color:#92400e;border:1px solid #fde68a;" title="다른 분류로 복사">📋 복사</button>
+            <button onclick="shareToBoard('${p.id}')" class="px-2 py-1.5 rounded-lg text-xs font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판">📤 공유</button>
+          </div>
         </div>`;
       wrap.appendChild(row);
     };
@@ -2926,10 +2928,12 @@ function renderAdminProducts() {
           <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-          <button onclick="duplicateProduct('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#fefce8;color:#92400e;border:1px solid #fde68a;" title="이 제품을 복사해서 다른 분류에 새로 추가">📋</button>
-          <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
-          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
+          <div class="grid grid-cols-2 gap-1" style="min-width:112px">
+            <button onclick="openProductEditor('${p.id}')" class="px-2 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold">수정</button>
+            <button onclick="deleteProduct('${p.id}')" class="btn-danger text-xs py-1.5 px-2">삭제</button>
+            <button onclick="duplicateProduct('${p.id}')" class="px-2 py-1.5 rounded-lg text-xs font-semibold" style="background:#fefce8;color:#92400e;border:1px solid #fde68a;" title="다른 분류로 복사">📋 복사</button>
+            <button onclick="shareToBoard('${p.id}')" class="px-2 py-1.5 rounded-lg text-xs font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판">📤 공유</button>
+          </div>
         </div>`;
       wrap.appendChild(row);
     });
