@@ -1478,17 +1478,26 @@ function renderProducts() {
     grid.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400">아직 등록된 제품이 없습니다.</div>`;
     return;
   }
-  renderProductCards(list, grid);
+  renderProductCards(list, grid, currentCat);
 }
 
-function renderProductCards(list, grid) {
-  const withGroup    = list.filter(p => p.group);
-  const withoutGroup = list.filter(p => !p.group);
+function renderProductCards(list, grid, viewCatId) {
+  // 추가 진열 시 해당 분류의 소분류 사용, 메인 분류면 p.group 사용
+  const getEffectiveGroup = (p) => {
+    if (viewCatId && p.cat !== viewCatId && p.extraCats && p.extraCats.includes(viewCatId)) {
+      return (p.extraCatGroups && p.extraCatGroups[viewCatId]) || '';
+    }
+    return p.group || '';
+  };
+
+  const withGroup    = list.filter(p => getEffectiveGroup(p));
+  const withoutGroup = list.filter(p => !getEffectiveGroup(p));
   const groupOrder = [];
   const groupMap   = {};
   withGroup.forEach(p => {
-    if (!groupMap[p.group]) { groupMap[p.group] = []; groupOrder.push(p.group); }
-    groupMap[p.group].push(p);
+    const grp = getEffectiveGroup(p);
+    if (!groupMap[grp]) { groupMap[grp] = []; groupOrder.push(grp); }
+    groupMap[grp].push(p);
   });
   const renderGroup = (label) => {
     const header = document.createElement('div');
@@ -2785,28 +2794,53 @@ let _selectedProdId = null;
 function renderExtraCatChips() {
   const wrap = $('#extra-cats-wrap');
   if (!wrap) return;
-  const mainCat = $('#prod-edit-cat')?.value || '';
-  const selected = window._editExtraCats || [];
+  const mainCat  = $('#prod-edit-cat')?.value || '';
+  const selected = window._editExtraCats     || [];
+  const grpMap   = window._editExtraCatGroups || {};
   wrap.innerHTML = '';
-  data.categories
-    .filter(c => c.id !== mainCat) // 메인분류는 제외
-    .forEach(c => {
-      const on = selected.includes(c.id);
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.textContent = c.emoji + ' ' + c.name;
-      chip.className = 'px-3 py-1 rounded-full text-xs font-semibold border transition-all ' +
-        (on ? 'bg-teal-500 text-white border-teal-500' : 'bg-slate-100 text-slate-500 border-slate-200 hover:border-teal-400');
-      chip.onclick = () => {
-        if (on) { window._editExtraCats = selected.filter(x => x !== c.id); }
-        else    { window._editExtraCats = [...selected, c.id]; }
-        renderExtraCatChips();
-      };
-      wrap.appendChild(chip);
-    });
-  if (data.categories.filter(c => c.id !== mainCat).length === 0) {
+
+  const otherCats = data.categories.filter(c => c.id !== mainCat);
+  if (otherCats.length === 0) {
     wrap.innerHTML = '<span class="text-xs text-slate-400">분류가 하나뿐이에요</span>';
+    return;
   }
+
+  otherCats.forEach(c => {
+    const on = selected.includes(c.id);
+    const block = document.createElement('div');
+    block.className = 'flex flex-col gap-1';
+
+    // 칩 버튼
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.textContent = c.emoji + ' ' + c.name;
+    chip.className = 'px-3 py-1 rounded-full text-xs font-semibold border transition-all self-start ' +
+      (on ? 'bg-teal-500 text-white border-teal-500' : 'bg-slate-100 text-slate-500 border-slate-200 hover:border-teal-400');
+    chip.onclick = () => {
+      if (on) {
+        window._editExtraCats = selected.filter(x => x !== c.id);
+        delete window._editExtraCatGroups[c.id];
+      } else {
+        window._editExtraCats = [...selected, c.id];
+      }
+      renderExtraCatChips();
+    };
+    block.appendChild(chip);
+
+    // 선택된 경우 → 그 분류의 소분류 드롭다운 표시
+    if (on && c.subs && c.subs.length > 0) {
+      const sel = document.createElement('select');
+      sel.className = 'text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 ml-1';
+      sel.innerHTML = '<option value="">— 소분류 없음 —</option>' +
+        c.subs.map(s => `<option value="${s}" ${grpMap[c.id] === s ? 'selected' : ''}>${s}</option>`).join('');
+      sel.onchange = () => {
+        window._editExtraCatGroups[c.id] = sel.value;
+      };
+      block.appendChild(sel);
+    }
+
+    wrap.appendChild(block);
+  });
 }
 
 // ── 관리자 제품목록 렌더링 ──────────────────────────────────────
@@ -3038,8 +3072,9 @@ function openProductEditor(id) {
   $('#barcode-status').textContent = '';
   $('#drug-search-results').classList.add('hidden');
   updateImgPreview();
-  // extraCats 칩 렌더링
-  window._editExtraCats = (editing?.extraCats || []).slice();
+  // extraCats + extraCatGroups 칩 렌더링
+  window._editExtraCats      = (editing?.extraCats || []).slice();
+  window._editExtraCatGroups = Object.assign({}, editing?.extraCatGroups || {});
   renderExtraCatChips();
   $('#prod-editor-overlay').classList.remove('hidden');
 }
@@ -3118,7 +3153,10 @@ function saveProduct() {
 
   const obj = {
     cat,
-    extraCats:     (window._editExtraCats || []).filter(c => c !== cat), // 메인분류 중복 제거
+    extraCats:      (window._editExtraCats || []).filter(c => c !== cat), // 메인분류 중복 제거
+    extraCatGroups: Object.fromEntries(
+      Object.entries(window._editExtraCatGroups || {}).filter(([k]) => k !== cat)
+    ),
     emoji:         $('#prod-edit-emoji').value.trim() || '📦',
     name,
     tagline:       $('#prod-edit-tagline').value.trim(),
