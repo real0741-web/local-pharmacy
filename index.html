@@ -1100,8 +1100,12 @@
       <div id="ai-analyze-status" class="text-xs text-center mt-1 hidden"></div>
     </div>
     <div class="field">
-      <label>분류</label>
-      <select id="prod-edit-cat" onchange="updateGroupOptions(this.value,'')"></select>
+      <label>분류 (메인)</label>
+      <select id="prod-edit-cat" onchange="updateGroupOptions(this.value,''); renderExtraCatChips()"></select>
+    </div>
+    <div class="field">
+      <label class="flex items-center gap-1">📌 추가 진열 분류 <span class="text-xs font-normal text-slate-400">(같은 제품을 여러 분류에 동시 표시)</span></label>
+      <div id="extra-cats-wrap" class="flex flex-wrap gap-2 mt-1"></div>
     </div>
     <div class="field">
       <label>제품명</label>
@@ -1463,7 +1467,9 @@ function renderProducts() {
   $('#cat-title').textContent = `${cat.emoji} ${cat.name}`;
   $('#cat-desc').textContent = cat.desc || '';
 
-  const list = data.products.filter(p => p.cat === currentCat && !p.hidden);
+  const list = data.products.filter(p =>
+    (p.cat === currentCat || (p.extraCats && p.extraCats.includes(currentCat))) && !p.hidden
+  );
   $('#cat-count').textContent = `총 ${list.length}개`;
 
   const grid = $('#product-grid');
@@ -2342,7 +2348,7 @@ function renderAdminCats() {
     clearCatSelection(); return;
   }
   data.categories.forEach((c, i) => {
-    const count = data.products.filter(p => p.cat === c.id).length;
+    const count = data.products.filter(p => p.cat === c.id || (p.extraCats||[]).includes(c.id)).length;
     const selected = _selectedCatId === c.id;
     const row = document.createElement('div');
     row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
@@ -2775,6 +2781,35 @@ function deleteBundle(id) {
 
 let _selectedProdId = null;
 
+// ── 추가 진열 분류 칩 렌더링 (에디터 내) ───────────────────────
+function renderExtraCatChips() {
+  const wrap = $('#extra-cats-wrap');
+  if (!wrap) return;
+  const mainCat = $('#prod-edit-cat')?.value || '';
+  const selected = window._editExtraCats || [];
+  wrap.innerHTML = '';
+  data.categories
+    .filter(c => c.id !== mainCat) // 메인분류는 제외
+    .forEach(c => {
+      const on = selected.includes(c.id);
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = c.emoji + ' ' + c.name;
+      chip.className = 'px-3 py-1 rounded-full text-xs font-semibold border transition-all ' +
+        (on ? 'bg-teal-500 text-white border-teal-500' : 'bg-slate-100 text-slate-500 border-slate-200 hover:border-teal-400');
+      chip.onclick = () => {
+        if (on) { window._editExtraCats = selected.filter(x => x !== c.id); }
+        else    { window._editExtraCats = [...selected, c.id]; }
+        renderExtraCatChips();
+      };
+      wrap.appendChild(chip);
+    });
+  if (data.categories.filter(c => c.id !== mainCat).length === 0) {
+    wrap.innerHTML = '<span class="text-xs text-slate-400">분류가 하나뿐이에요</span>';
+  }
+}
+
+// ── 관리자 제품목록 렌더링 ──────────────────────────────────────
 function renderAdminProducts() {
   const wrap    = $('#admin-prod-list');
   const search  = ($('#prod-search').value || '').trim().toLowerCase();
@@ -2801,39 +2836,110 @@ function renderAdminProducts() {
     ? data.products.filter(p => p.group === gFilter)
     : filter ? data.products.filter(p => p.cat === filter) : data.products;
 
-  list.forEach(p => {
-    const cat      = data.categories.find(c => c.id === p.cat);
-    const selected = _selectedProdId === p.id;
-    const thumb    = p.image
-      ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
-      : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
+  // ── 소분류별 그룹핑 (검색·소분류필터 없을 때만) ──────────────
+  const useGrouping = !search && !gFilter;
+  if (useGrouping) {
+    // 소분류가 있는 제품: group별로 모으기
+    const grouped = {};   // group → products[]
+    const noGroup = [];
+    list.forEach(p => {
+      if (p.group) {
+        if (!grouped[p.group]) grouped[p.group] = [];
+        grouped[p.group].push(p);
+      } else {
+        noGroup.push(p);
+      }
+    });
 
-    const row = document.createElement('div');
-    row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
-    row.dataset.prodid = p.id;
-    if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
-    row.onclick = (e) => {
-      if (e.target.closest('button')) return;
-      selectProd(p.id, p.name);
-    };
-    if (p.hidden) row.style.opacity = '0.45';
-    row.innerHTML = `
-      ${thumb}
-      <div class="flex-1 min-w-0">
-        <div class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</div>
-        <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}
-          ${p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full" style="background:#fee2e2;color:#b91c1c;">숨김</span>` : ''}
-          ${(!p.stock || p.stock <= 0) && !p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">품절</span>` : ''}
+    const renderRow = (p) => {
+      const cat      = data.categories.find(c => c.id === p.cat);
+      const selected = _selectedProdId === p.id;
+      const thumb    = p.image
+        ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
+        : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
+      const extraCatBadges = (p.extraCats||[]).map(ecId => {
+        const ec = data.categories.find(c => c.id === ecId);
+        return ec ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-500 border border-blue-200">${ec.emoji}${ec.name}</span>` : '';
+      }).join('');
+      const row = document.createElement('div');
+      row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+      row.dataset.prodid = p.id;
+      if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
+      row.onclick = (e) => { if (e.target.closest('button')) return; selectProd(p.id, p.name); };
+      if (p.hidden) row.style.opacity = '0.45';
+      row.innerHTML = `
+        ${thumb}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1 flex-wrap">
+            <span class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</span>
+            ${extraCatBadges}
+          </div>
+          <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}
+            ${p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full" style="background:#fee2e2;color:#b91c1c;">숨김</span>` : ''}
+            ${(!p.stock || p.stock <= 0) && !p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">품절</span>` : ''}
+          </div>
+          <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
         </div>
-        <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
-      </div>
-      <div class="flex items-center gap-1 shrink-0">
-        <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
-        <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
-        <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
-      </div>`;
-    wrap.appendChild(row);
-  });
+        <div class="flex items-center gap-1 shrink-0">
+          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+          <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
+          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
+        </div>`;
+      wrap.appendChild(row);
+    };
+
+    // 소분류 헤더 + 제품 렌더
+    Object.keys(grouped).forEach(grp => {
+      const header = document.createElement('div');
+      header.className = 'px-2 pt-3 pb-1 text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1';
+      header.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-teal-400"></span> ${grp} <span class="font-normal text-slate-400">(${grouped[grp].length})</span>`;
+      wrap.appendChild(header);
+      grouped[grp].forEach(renderRow);
+    });
+
+    // 소분류 없는 제품
+    if (noGroup.length > 0) {
+      if (Object.keys(grouped).length > 0) {
+        const header = document.createElement('div');
+        header.className = 'px-2 pt-3 pb-1 text-xs font-bold text-slate-400 flex items-center gap-1';
+        header.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-slate-300"></span> 소분류 없음 <span class="font-normal">(${noGroup.length})</span>`;
+        wrap.appendChild(header);
+      }
+      noGroup.forEach(renderRow);
+    }
+
+  } else {
+    // 검색·소분류필터 활성 시 기존 플랫 렌더
+    list.forEach(p => {
+      const cat      = data.categories.find(c => c.id === p.cat);
+      const selected = _selectedProdId === p.id;
+      const thumb    = p.image
+        ? `<img src="${p.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />`
+        : `<div class="img-ph w-12 h-12 rounded-lg shrink-0 text-xl">${p.emoji||'📦'}</div>`;
+      const row = document.createElement('div');
+      row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
+      row.dataset.prodid = p.id;
+      if (selected) row.style.cssText = 'background:#f0fdf4;border-color:#14b8a6;box-shadow:0 0 0 2px #99f6e4;';
+      row.onclick = (e) => { if (e.target.closest('button')) return; selectProd(p.id, p.name); };
+      if (p.hidden) row.style.opacity = '0.45';
+      row.innerHTML = `
+        ${thumb}
+        <div class="flex-1 min-w-0">
+          <div class="text-xs text-slate-400">${cat ? cat.emoji+' '+cat.name : '미분류'}</div>
+          <div class="font-semibold text-sm leading-tight line-clamp-1">${p.name}
+            ${p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full" style="background:#fee2e2;color:#b91c1c;">숨김</span>` : ''}
+            ${(!p.stock || p.stock <= 0) && !p.hidden ? `<span class="ml-1 text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">품절</span>` : ''}
+          </div>
+          <div class="text-sm font-bold text-teal-700 mt-0.5">${fmt(p.price)}${p.list ? `<span class="text-xs text-slate-400 line-through font-normal ml-1">${fmt(p.list)}</span>` : ''}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <button onclick="openProductEditor('${p.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 text-sm font-semibold">수정</button>
+          <button onclick="shareToBoard('${p.id}')" class="px-3 py-1.5 rounded-lg text-sm font-semibold" style="background:#f0fdf4;color:#0d9488;border:1px solid #99f6e4;" title="약품 공유 게시판에 공유">📤</button>
+          <button onclick="deleteProduct('${p.id}')" class="btn-danger text-sm">삭제</button>
+        </div>`;
+      wrap.appendChild(row);
+    });
+  }
   _updateProdOrderBar();
 }
 
@@ -2932,6 +3038,9 @@ function openProductEditor(id) {
   $('#barcode-status').textContent = '';
   $('#drug-search-results').classList.add('hidden');
   updateImgPreview();
+  // extraCats 칩 렌더링
+  window._editExtraCats = (editing?.extraCats || []).slice();
+  renderExtraCatChips();
   $('#prod-editor-overlay').classList.remove('hidden');
 }
 function closeProductEditor() {
@@ -3009,6 +3118,7 @@ function saveProduct() {
 
   const obj = {
     cat,
+    extraCats:     (window._editExtraCats || []).filter(c => c !== cat), // 메인분류 중복 제거
     emoji:         $('#prod-edit-emoji').value.trim() || '📦',
     name,
     tagline:       $('#prod-edit-tagline').value.trim(),
