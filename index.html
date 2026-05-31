@@ -1526,8 +1526,8 @@ function appendProductCard(p, grid) {
                   style="background: var(--brand-soft); color: var(--brand);">${b}</span>
           `).join('')}
         </div>
-        <div class="font-bold text-base leading-tight line-clamp-2 min-h-[2.5em]">${p.name}</div>
-        <div class="text-sm text-slate-600 mt-1 line-clamp-2 font-medium">${p.tagline || ''}</div>
+        <div class="font-extrabold text-base leading-tight line-clamp-2 min-h-[2.5em]" style="color:#0f172a;">${p.name}</div>
+        <div class="text-sm mt-1 line-clamp-2 font-semibold" style="color:#374151;">${p.tagline || ''}</div>
         <div class="mt-2 flex items-end gap-2">
           ${(p.priceHidden || !window._qrPriceVisible)
             ? `<div class="font-semibold text-sm px-3 py-1 rounded-full" style="background:var(--brand-soft);color:var(--brand);">💬 가격 문의</div>`
