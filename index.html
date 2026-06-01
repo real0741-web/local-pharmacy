@@ -11,6 +11,8 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <!-- 엑셀 파일 파싱용 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- 토스페이먼츠 SDK -->
+<script src="https://js.tosspayments.com/v1/payment"></script>
 <style>
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo',
@@ -370,9 +372,9 @@
         <div class="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center text-base font-black text-white shrink-0">T</div>
         <div class="flex-1">
           <div class="font-semibold text-sm">토스페이</div>
-          <div class="text-xs text-slate-400">토스 간편결제 · 배송 가능</div>
+          <div class="text-xs text-slate-400">카드 · 토스앱 · 간편결제</div>
         </div>
-        <span class="text-[10px] bg-amber-100 text-amber-600 font-semibold px-2 py-0.5 rounded-full shrink-0">연동 예정</span>
+        <span class="text-[10px] bg-blue-100 text-blue-600 font-semibold px-2 py-0.5 rounded-full shrink-0">결제 가능</span>
       </button>
       </div>
 
@@ -1842,6 +1844,125 @@ function chooseCounter() {
 
 let _orderSubmitting = false;
 
+// ── 토스페이먼츠 설정 ──────────────────────────────────
+// 테스트 키: 실제 결제 없이 테스트 가능 (가맹점 승인 후 실키로 교체)
+// 교체 방법: TOSS_CLIENT_KEY = '실제_ck_...' / Worker에서도 sk_ 교체
+const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq';
+
+async function launchTossPayment() {
+  const total = cart.reduce((s, c) => {
+    const p = data.products.find(pp => pp.id === c.id);
+    return s + (p ? p.price * c.qty : 0);
+  }, 0);
+
+  if (total <= 0) { showToast('결제 금액을 확인해주세요'); return; }
+
+  // 주문 ID 생성
+  const orderId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2,6).toUpperCase();
+
+  // 주문명 생성
+  const firstName = cart[0] ? (data.products.find(p => p.id === cart[0].id)?.name || '상품') : '상품';
+  const orderName = cart.length > 1 ? `${firstName} 외 ${cart.length - 1}건` : firstName;
+
+  // 결제 후 복원용 주문 데이터 저장
+  const pendingOrder = {
+    orderId,
+    items: cart.map(c => {
+      const p = data.products.find(pp => pp.id === c.id);
+      return { id: c.id, name: p?.name || '?', price: p?.price || 0, qty: c.qty, note: p?.pharmacistNote || '' };
+    }),
+    total,
+    deliveryMode: _deliveryMode,
+    delivery: _deliveryMode === 'delivery' ? {
+      name:  (document.getElementById('del-name')?.value  || '').trim(),
+      phone: (document.getElementById('del-phone')?.value || '').trim(),
+      addr:  (document.getElementById('del-addr')?.value  || '').trim(),
+      addr2: (document.getElementById('del-addr2')?.value || '').trim(),
+      memo:  (document.getElementById('del-memo')?.value  || '').trim(),
+    } : null,
+    shopId: window._shopId || 'shop1',
+    ts: Date.now(),
+  };
+  localStorage.setItem('_pendingTossOrder', JSON.stringify(pendingOrder));
+
+  // 현재 페이지 URL (성공/실패 리다이렉트용)
+  const baseUrl = location.origin + location.pathname;
+
+  try {
+    const tossPayments = TossPayments(TOSS_CLIENT_KEY);
+    await tossPayments.requestPayment('카드', {
+      amount: total,
+      orderId,
+      orderName,
+      customerName: '고객',
+      successUrl: baseUrl + '?toss=success&orderId=' + orderId,
+      failUrl:    baseUrl + '?toss=fail&orderId=' + orderId,
+    });
+  } catch(e) {
+    localStorage.removeItem('_pendingTossOrder');
+    if (e.code !== 'USER_CANCEL') {
+      showToast('결제 오류: ' + (e.message || '알 수 없는 오류'));
+    }
+  }
+}
+
+// ── 토스 결제 완료 처리 (리다이렉트 후 실행) ──────────────
+async function handleTossRedirect() {
+  const params = new URLSearchParams(location.search);
+  const tossStatus = params.get('toss');
+  if (!tossStatus) return;
+
+  // URL 정리 (뒤로가기 시 재처리 방지)
+  history.replaceState({}, '', location.pathname);
+
+  if (tossStatus === 'fail') {
+    const msg = params.get('message') || '결제가 취소됐습니다';
+    showToast('❌ ' + msg);
+    localStorage.removeItem('_pendingTossOrder');
+    return;
+  }
+
+  if (tossStatus !== 'success') return;
+
+  const paymentKey = params.get('paymentKey');
+  const orderId    = params.get('orderId');
+  const amount     = parseInt(params.get('amount') || '0', 10);
+
+  const pendingRaw = localStorage.getItem('_pendingTossOrder');
+  if (!pendingRaw) { showToast('주문 정보를 찾을 수 없습니다'); return; }
+
+  let pending;
+  try { pending = JSON.parse(pendingRaw); } catch(e) { return; }
+  localStorage.removeItem('_pendingTossOrder');
+
+  showToast('⏳ 결제 확인 중...');
+
+  try {
+    // Cloudflare Worker에서 토스 결제 확인 + 서버 저장
+    const workerUrl = data?.settings?.workerUrl || 'https://pharmacy-proxy.speed0324.workers.dev';
+    const shopId    = pending.shopId || 'shop1';
+    const res = await fetch(`${workerUrl}?action=confirmTossPayment&shopId=${shopId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentKey, orderId, amount, order: pending }),
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.error || '확인 실패');
+
+    // 주문 완료 화면 표시
+    const qNum = getTodayQueueNumber();
+    const queueStr = formatQueueNum(qNum);
+    cart = [];
+    updateCartUI();
+    toggleCart(false);
+    closePaymentModal();
+    showOrderComplete(queueStr, pending.items, pending.total, 'toss');
+
+  } catch(e) {
+    showToast('결제 확인 실패: ' + e.message);
+  }
+}
+
 async function selectPayment(method) {
   // ── 세션 만료 / 비인가 접속 차단 (이중 보안) ──
   if (!window._qrPriceVisible) {
@@ -1849,6 +1970,11 @@ async function selectPayment(method) {
     updateCartUI();
     toggleCart(false);
     showToast('🔒 세션이 만료됐습니다. QR을 다시 스캔해 주세요.');
+    return;
+  }
+
+  if (method === 'toss') {
+    await launchTossPayment();
     return;
   }
 
@@ -3319,14 +3445,14 @@ async function saveQRConfig() {
 
 // ─ QR URL 조합 헬퍼
 function _buildQRUrl(base, slotNum) {
-  // slotNum이 null/undefined이거나 _qrType이 single이면 순수 URL 반환
-  if (!slotNum || _qrType === 'single') return base;
+  // single 모드는 항상 ?qr=1 고정 (Worker에서 single=true면 무조건 통과)
+  const num = (_qrType === 'single') ? 1 : (slotNum || 1);
   try {
     const u = new URL(base);
-    u.searchParams.set('qr', String(slotNum));
+    u.searchParams.set('qr', String(num));
     return u.toString();
   } catch(_) {
-    return `${base}${base.includes('?') ? '&' : '?'}qr=${slotNum}`;
+    return `${base}${base.includes('?') ? '&' : '?'}qr=${num}`;
   }
 }
 
@@ -5003,7 +5129,18 @@ async function _applyRemoteData(showToastMsg, bgMode = false) {
 
   // 어떤 경우든 로딩 스크린 제거
   hideLoading();
+
+  // ── QR 유효성 검사 (로딩 완료 후 실행) ──
+  if (!isAdmin && !sessionStorage.getItem('pharm_admin_session')) {
+    checkQRValidity();
+  }
 })();
+
+// ── 토스 결제 리다이렉트 처리 ──
+if (location.search.includes('toss=')) {
+  // initApp 완료 후 처리 (약간의 딜레이)
+  setTimeout(() => handleTossRedirect(), 800);
+}
 
 // ── 관리자 세션 복구 & URL 파라미터 처리 ──
 if (sessionStorage.getItem('pharm_admin_session') === '1') {
