@@ -3757,9 +3757,8 @@ function buildReceiptHTML(order) {
   // ── 주문 내역 아이템 목록
   const itemsHTML = order.items.map(i => {
     const lineTotal = fmt((i.price || 0) * (i.qty || 1));
-    return `<div style="margin-bottom:3px;">
+    return `<div style="margin-bottom:4px;word-break:keep-all;overflow-wrap:break-word;">
       · ${i.name} × ${i.qty}　(<strong>${lineTotal}</strong>)
-      ${i.note ? `<div style="font-style:italic;color:#555;font-size:11px;margin-left:8px;line-height:1.5;">${i.note}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -3772,7 +3771,7 @@ function buildReceiptHTML(order) {
         ${noteItems.map(i => `
           <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:#fafafa;">
             <div style="font-weight:700;font-size:11.5px;color:#0f766e;margin-bottom:5px;">· ${i.name} × ${i.qty}　(${fmt((i.price||0)*(i.qty||1))})</div>
-            <div style="font-size:11px;color:#334155;line-height:1.6;">${i.note}</div>
+            <div style="font-size:11px;color:#334155;line-height:1.6;word-break:keep-all;overflow-wrap:break-word;">${i.note}</div>
           </div>`).join('')}
       </div>
     </div>` : '';
@@ -3900,7 +3899,7 @@ function _startSession() {
   renderProducts();
   clearTimeout(window._sessionExpireTimer);
   const limitMs = SESSION_MINUTES * 60 * 1000;
-  const sessionStart = parseInt(sessionStorage.getItem('pharm_session_ts') || String(Date.now()), 10);
+  const sessionStart = parseInt(localStorage.getItem('pharm_session_ts') || String(Date.now()), 10);
   const elapsed = Date.now() - sessionStart;
   const remaining = Math.max(0, limitMs - elapsed);
   window._sessionExpireTimer = setTimeout(() => _expireSession('expired'), remaining);
@@ -3921,8 +3920,9 @@ async function checkQRValidity() {
   }
 
   // 이미 이 QR로 유효한 세션이 있으면 재검증 없이 통과
-  const storedQR    = sessionStorage.getItem('pharm_qr_num');
-  const sessionStart = sessionStorage.getItem('pharm_session_ts');
+  // localStorage 사용 — iOS Safari는 sessionStorage가 탭/앱 전환 시 초기화되는 문제 있음
+  const storedQR    = localStorage.getItem('pharm_qr_num');
+  const sessionStart = localStorage.getItem('pharm_session_ts');
   if (storedQR === String(qrNum) && sessionStart) {
     const ageMs   = Date.now() - parseInt(sessionStart, 10);
     const limitMs = SESSION_MINUTES * 60 * 1000;
@@ -3931,21 +3931,21 @@ async function checkQRValidity() {
       return;
     }
     // 세션 만료
-    sessionStorage.removeItem('pharm_qr_num');
-    sessionStorage.removeItem('pharm_session_ts');
+    localStorage.removeItem('pharm_qr_num');
+    localStorage.removeItem('pharm_session_ts');
     _expireSession('expired');
     return;
   }
 
   // Worker에 유효성 검사 요청
   try {
-    const res = await fetch(`${PROXY}/?action=validateQR&qr=${qrNum}`);
+    const res = await fetch(`${PROXY}/?action=validateQR&qr=${qrNum}&shopId=${SHOP_ID}`);
     if (!res.ok) throw new Error('network');
     const { valid } = await res.json();
     if (valid) {
-      // 새 세션 시작
-      sessionStorage.setItem('pharm_qr_num', String(qrNum));
-      sessionStorage.setItem('pharm_session_ts', String(Date.now()));
+      // 새 세션 시작 (localStorage — iOS 호환)
+      localStorage.setItem('pharm_qr_num', String(qrNum));
+      localStorage.setItem('pharm_session_ts', String(Date.now()));
       _startSession();
     } else {
       _expireSession('invalid_qr');
