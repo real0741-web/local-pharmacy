@@ -3750,45 +3750,76 @@ function buildReceiptHTML(order) {
   const pharmName  = data.settings.pharmacyName  || '로컬 창고약국';
   const pharmPhone = data.settings.pharmacyPhone || '';
   const now = new Date(order.timestamp || Date.now());
-  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
-  const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = `${now.getFullYear()}년 ${String(now.getMonth()+1).padStart(2,'0')}월 ${String(now.getDate()).padStart(2,'0')}일`;
+  const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const orderId = order.id || '';
 
+  // ── 주문 내역 아이템 목록
   const itemsHTML = order.items.map(i => {
     const lineTotal = fmt((i.price || 0) * (i.qty || 1));
-    return `
-      <div class="rc-row">
-        <span class="rc-name">${i.name}<span class="rc-qty"> ×${i.qty}</span></span>
-        <span class="rc-price">${lineTotal}</span>
-      </div>
-      ${i.note ? `<div class="rc-note">💊 ${i.note}</div>` : ''}
-    `;
+    return `<div style="margin-bottom:3px;">
+      · ${i.name} × ${i.qty}　(<strong>${lineTotal}</strong>)
+      ${i.note ? `<div style="font-style:italic;color:#555;font-size:11px;margin-left:8px;line-height:1.5;">${i.note}</div>` : ''}
+    </div>`;
   }).join('');
 
-  const payLabel = order.paymentMethod === 'counter' ? '현장 결제' : (order.paymentMethod || '현장 결제');
-  const deliveryHTML = order.delivery
-    ? `<hr class="rc-hr"/>
-       <div class="rc-sub">📦 배송: ${order.delivery.name} / ${order.delivery.phone}</div>
-       <div class="rc-sub">${order.delivery.addr}${order.delivery.addr2 ? ' ' + order.delivery.addr2 : ''}</div>
-       ${order.delivery.memo ? `<div class="rc-sub">메모: ${order.delivery.memo}</div>` : ''}`
-    : '';
+  // ── 복약 안내 카드 (약사 한마디가 있는 항목만)
+  const noteItems = order.items.filter(i => i.note);
+  const noteGrid = noteItems.length ? `
+    <div style="margin-top:18px;">
+      <div style="font-weight:900;color:#c0392b;font-size:13px;margin-bottom:10px;border-bottom:2px solid #c0392b;padding-bottom:4px;">■ 복약 안내</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${noteItems.map(i => `
+          <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:#fafafa;">
+            <div style="font-weight:700;font-size:11.5px;color:#0f766e;margin-bottom:5px;">· ${i.name} × ${i.qty}　(${fmt((i.price||0)*(i.qty||1))})</div>
+            <div style="font-size:11px;color:#334155;line-height:1.6;">${i.note}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
 
-  return `<div class="rc-wrap">
-    <div class="rc-header">${pharmName}</div>
-    ${pharmPhone ? `<div class="rc-sub">☎ ${pharmPhone}</div>` : ''}
-    <hr class="rc-hr-solid"/>
-    <div class="rc-row">
-      <span class="rc-bold">접수 ${order.customerName}</span>
-      <span>${dateStr} ${timeStr}</span>
+  const payLabel = order.paymentMethod === 'counter' ? '카운터에서 결제해 주세요. 감사합니다!' : (order.paymentMethod || '카운터에서 결제해 주세요. 감사합니다!');
+
+  const deliveryHTML = order.delivery
+    ? `<div style="margin-top:8px;padding:8px;background:#f0fdf4;border-radius:6px;font-size:11px;">
+        📦 배송: ${order.delivery.name} / ${order.delivery.phone}<br/>
+        ${order.delivery.addr}${order.delivery.addr2 ? ' ' + order.delivery.addr2 : ''}
+        ${order.delivery.memo ? `<br/>메모: ${order.delivery.memo}` : ''}
+       </div>` : '';
+
+  return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-size:12px;color:#1e293b;max-width:700px;margin:0 auto;padding:24px 28px;">
+    <!-- 날짜 우측 상단 -->
+    <div style="text-align:right;font-size:11px;color:#64748b;margin-bottom:14px;">${dateStr}　${timeStr}</div>
+
+    <!-- 주문 내역 섹션 -->
+    <div style="font-weight:900;color:#c0392b;font-size:13px;margin-bottom:8px;border-bottom:2px solid #c0392b;padding-bottom:4px;">■ 주문 내역</div>
+    <div style="font-weight:700;margin-bottom:6px;">접수번호: #${orderId.slice(-3) || '000'}</div>
+    <div style="border-bottom:1px solid #cbd5e1;margin-bottom:8px;"></div>
+
+    <div style="line-height:1.9;">${itemsHTML}</div>
+
+    <div style="border-bottom:1px solid #cbd5e1;margin:10px 0 8px;"></div>
+    <div style="font-size:11px;color:#64748b;">${orderId}</div>
+    <div style="font-size:11px;color:#64748b;">${timeStr}</div>
+
+    <!-- 합계 -->
+    <div style="text-align:right;font-size:16px;font-weight:900;margin-top:12px;padding-top:8px;border-top:2px solid #1e293b;">
+      합계: ${fmt(order.total)}
     </div>
-    <hr class="rc-hr"/>
-    ${itemsHTML}
-    <hr class="rc-hr"/>
-    <div class="rc-total"><span>합 계</span><span>${fmt(order.total)}</span></div>
-    <div class="rc-meta"><span>결제</span><span>${payLabel}</span></div>
+
     ${deliveryHTML}
-    <hr class="rc-hr-solid"/>
-    <div class="rc-footer">💊 복약 관련 문의는 약사에게</div>
-    <div class="rc-footer">감사합니다 🙏</div>
+    ${noteGrid}
+
+    <!-- 하단 안내 -->
+    <div style="margin-top:20px;font-size:10.5px;color:#64748b;line-height:1.8;">
+      * 이상반응 시 즉시 복용을 중단하고 약사에게 문의하세요.<br/>
+      * 어린이 손이 닿지 않는 서늘하고 건조한 곳에 보관하세요.
+    </div>
+
+    <div style="text-align:center;font-weight:900;color:#c0392b;font-size:13px;margin-top:16px;">${payLabel}</div>
+
+    <div style="text-align:center;font-weight:700;margin-top:10px;font-size:12px;border-top:1px solid #e2e8f0;padding-top:10px;">
+      ${pharmName}${pharmPhone ? `　|　TEL ${pharmPhone}` : ''}
+    </div>
   </div>`;
 }
 
