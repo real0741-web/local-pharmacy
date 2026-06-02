@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>로컬 창고약국 - 디지털 가이드</title>
+<title>오더팜 - 디지털 가이드</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- QR 코드 생성용 라이브러리 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -140,7 +140,7 @@
       <div id="logo" class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg cursor-pointer select-none"
            style="background: var(--brand);">℞</div>
       <div>
-        <div id="header-name" class="text-base sm:text-lg font-bold leading-tight">로컬 창고약국</div>
+        <div id="header-name" class="text-base sm:text-lg font-bold leading-tight">오더팜</div>
         <div id="header-tagline" class="text-xs text-slate-500 leading-tight">대기 중에 약사님이 큐레이션한 제품을 둘러보세요</div>
       </div>
     </div>
@@ -1205,7 +1205,7 @@ if (!AbortSignal.timeout) {
 const DEFAULT_DATA = {
   bundles: [],
   settings: {
-    pharmacyName: '로컬 창고약국',
+    pharmacyName: '오더팜',
     tagline: '대기 중에 약사님이 큐레이션한 제품을 둘러보세요',
     adminPin: '1234',
     allowDelivery: false,
@@ -1356,7 +1356,7 @@ function showToast(msg) {
    사용자 화면 렌더링
    =========================================== */
 function applyHeader() {
-  const name = data.settings.pharmacyName || '로컬 창고약국';
+  const name = data.settings.pharmacyName || '오더팜';
   $('#header-name').textContent = name;
   $('#header-tagline').textContent = data.settings.tagline || '';
   // 브라우저 탭 제목 + 인쇄 헤더에도 반영
@@ -1801,7 +1801,7 @@ async function sendTelegramAlert(order) {
     return line;
   }).join('\n');
 
-  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  const pharmName = data.settings.pharmacyName || '오더팜';
   const text =
     `🔔 새 주문 접수! [${pharmName}]\n\n` +
     `🎫 접수번호: ${order.customerName}\n` +
@@ -3280,9 +3280,40 @@ let _qrType = '';  // 'single' | 'rotation'
 // QR 탭 열릴 때 호출
 function setQRDefault() {
   const baseEl = $('#qr-base-url');
+  // 저장된 URL 복원 (localStorage 우선, 없으면 현재 주소)
+  const savedUrl = localStorage.getItem('pharm_qr_base_url_' + SHOP_ID);
   if (baseEl && !baseEl.value) {
-    baseEl.value = location.protocol === 'file:' ? '' : (location.origin + location.pathname);
+    baseEl.value = savedUrl || (location.protocol === 'file:' ? '' : (location.origin + location.pathname));
   }
+  // KV에서 QR 설정 자동 로드 후 QR 재생성
+  _autoLoadQRConfig();
+}
+
+async function _autoLoadQRConfig() {
+  try {
+    const res = await fetch(`${PROXY}/?action=getQRConfig&shopId=${SHOP_ID}`);
+    if (!res.ok) return;
+    const cfg = await res.json();
+    if (!cfg || cfg.error) return;
+    _qrConfig = cfg;
+
+    // 저장된 base URL 복원
+    const savedUrl = localStorage.getItem('pharm_qr_base_url_' + SHOP_ID);
+    const baseEl   = $('#qr-base-url');
+    if (savedUrl && baseEl && !baseEl.value) baseEl.value = savedUrl;
+
+    // 모드 UI 복원
+    if (cfg.mode === 'single') {
+      setQRType('single');
+    } else {
+      setQRType('rotation');
+      setQRModeUI(cfg.mode || 'auto');
+      if (cfg.mode === 'manual') selectManualQR(cfg.activeQR || 1);
+    }
+
+    // URL이 있으면 QR 자동 생성
+    if (baseEl?.value) generateAllQRs();
+  } catch(_) {}
 }
 
 // ─ STEP 1: 운영 방식 선택
@@ -3513,6 +3544,8 @@ function generateAllQRs() {
     grid.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 text-center">URL을 먼저 입력해주세요</div>`;
     return;
   }
+  // base URL 저장 — 다른 기기에서 열어도 동일한 QR 복원
+  localStorage.setItem('pharm_qr_base_url_' + SHOP_ID, base);
 
   grid.innerHTML = '';
   Object.keys(_qrUrls).forEach(k => delete _qrUrls[k]);
@@ -3757,7 +3790,7 @@ function playBeep() {
 
 /* ── 주문서 HTML 생성 (buildReceiptHTML) ── */
 function buildReceiptHTML(order) {
-  const pharmName  = data.settings.pharmacyName  || '로컬 창고약국';
+  const pharmName  = data.settings.pharmacyName  || '오더팜';
   const pharmPhone = data.settings.pharmacyPhone || '';
   const now = new Date(order.timestamp || Date.now());
   const dateStr = `${now.getFullYear()}년 ${String(now.getMonth()+1).padStart(2,'0')}월 ${String(now.getDate()).padStart(2,'0')}일`;
@@ -3842,7 +3875,7 @@ function autoPrintOrder(order) {
 
 function autoPrint(text) {
   $('#print-receipt').innerHTML = '';
-  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  const pharmName = data.settings.pharmacyName || '오더팜';
   const bar = '━'.repeat(32);
   const pad = (s) => s.padStart(Math.floor((32 + s.length) / 2)).padEnd(32);
   const header = `${bar}\n${pad(pharmName)}\n${bar}\n`;
@@ -3851,7 +3884,7 @@ function autoPrint(text) {
 
 /* ── 수동 인쇄 (재인쇄 버튼 클릭 시만 호출) ── */
 function doPrint() {
-  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  const pharmName = data.settings.pharmacyName || '오더팜';
   document.title = pharmName + ' 주문서';
   window.print();
   setTimeout(() => { document.title = pharmName + ' - 디지털 가이드'; }, 1000);
@@ -5148,52 +5181,14 @@ async function _applyRemoteData(showToastMsg, bgMode = false) {
     hideLoading();
   }
 
-  // 서버에서 항상 최신 데이터 가져오기 (iOS 호환 타임아웃)
-  try {
+  // 서버에서 항상 최신 데이터 가져오기 (iOS 호환)
+  async function fetchRemoteData() {
     const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 10000);
-    const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
-      cache: 'no-store',
-      signal: ctrl.signal,
-    });
-    clearTimeout(tid);
-    if (res.ok) {
-      const remote = await res.json();
-      if (remote && !remote.error && remote.products?.length) {
-        data = migrate(remote);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        currentCat = data.categories[0]?.id || 'hot';
-        applyHeader(); renderCategories(); renderProducts();
-        renderSidebarBundleBtn(); updateCartUI();
-      }
-    }
-  } catch(_) {
-    // 네트워크 실패 → localStorage 데이터로 계속
-  }
-
-  // 어떤 경우든 로딩 스크린 제거
-  hideLoading();
-
-  // ── QR 유효성 검사 (로딩 완료 후 실행) ──
-  if (!isAdmin && !sessionStorage.getItem('pharm_admin_session')) {
-    checkQRValidity();
-  }
-})();
-
-// ── 토스 결제 리다이렉트 처리 ──
-if (location.search.includes('toss=')) {
-  // initApp 완료 후 처리 (약간의 딜레이)
-  setTimeout(() => handleTossRedirect(), 800);
-}
-
-// ── 관리자 세션 복구 & URL 파라미터 처리 ──
-if (sessionStorage.getItem('pharm_admin_session') === '1') {
-  // 새로고침해도 관리자 모드 유지
-  enterAdmin();
-} else if (_adminUrlMode) {
-  // ?mode=admin 또는 #admin → PIN 입력창 자동 오픈
-  openAdminLogin();
-}
-</script>
-</body>
-</html>
+    const tid  = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
+        cache: 'no-store', signal: ctrl.signal,
+      });
+      clearTimeout(tid);
+      if (!res.ok) return false;
+    
