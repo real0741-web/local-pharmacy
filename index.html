@@ -3915,28 +3915,33 @@ function _startSession() {
   window._sessionExpireTimer = setTimeout(() => _expireSession('expired'), remaining);
 }
 
-async function checkQRValidity() {
+function checkQRValidity() {
   if (isAdmin) { window._qrPriceVisible = true; return; }
 
-  // URL에서 ?qr=N 파라미터 확인
-  const urlParams  = new URLSearchParams(location.search);
-  const qrNumStr   = urlParams.get('qr');
-  const qrNum      = qrNumStr ? parseInt(qrNumStr, 10) : 0;
+  const urlParams = new URLSearchParams(location.search);
+  const qrNumStr  = urlParams.get('qr');
+  const qrNum     = qrNumStr ? parseInt(qrNumStr, 10) : 0;
 
-  // QR 파라미터가 없으면 → 가격 숨김 (직접 URL 접근 차단)
+  // QR 파라미터 없으면 → 가격 숨김
   if (!qrNum || isNaN(qrNum) || qrNum < 1 || qrNum > 5) {
+    // 기존 세션이 살아있으면 유지 (탭 내 이동 시)
+    const sessionStart = localStorage.getItem('pharm_session_ts');
+    if (sessionStart) {
+      const ageMs = Date.now() - parseInt(sessionStart, 10);
+      if (ageMs < SESSION_MINUTES * 60 * 1000) { _startSession(); return; }
+    }
     window._qrPriceVisible = false;
     return;
   }
 
-  // 이미 이 QR로 유효한 세션이 있으면 재검증 없이 통과
-  // localStorage 사용 — iOS Safari는 sessionStorage가 탭/앱 전환 시 초기화되는 문제 있음
-  const storedQR    = localStorage.getItem('pharm_qr_num');
+  // QR 파라미터 있으면 → 세션 시작 (Worker 검증 없이 — 약국 내부 물리 QR이므로 충분)
+  const storedQR     = localStorage.getItem('pharm_qr_num');
   const sessionStart = localStorage.getItem('pharm_session_ts');
+
+  // 같은 QR로 유효한 세션이 이미 있으면 재사용
   if (storedQR === String(qrNum) && sessionStart) {
-    const ageMs   = Date.now() - parseInt(sessionStart, 10);
-    const limitMs = SESSION_MINUTES * 60 * 1000;
-    if (ageMs < limitMs) {
+    const ageMs = Date.now() - parseInt(sessionStart, 10);
+    if (ageMs < SESSION_MINUTES * 60 * 1000) {
       _startSession();
       return;
     }
@@ -3947,21 +3952,12 @@ async function checkQRValidity() {
     return;
   }
 
-  // Worker에 유효성 검사 요청
-  try {
-    const res = await fetch(`${PROXY}/?action=validateQR&qr=${qrNum}&shopId=${SHOP_ID}`);
-    if (!res.ok) throw new Error('network');
-    const { valid } = await res.json();
-    if (valid) {
-      // 새 세션 시작 (localStorage — iOS 호환)
-      localStorage.setItem('pharm_qr_num', String(qrNum));
-      localStorage.setItem('pharm_session_ts', String(Date.now()));
-      _startSession();
-    } else {
-      _expireSession('invalid_qr');
-    }
-  } catch(_) {
-    // Worker 연결 실패 시 — 세션이 있으면 허용, 없으면 숨김 유지
+  // 새 QR 스캔 → 즉시 세션 시작
+  localStorage.setItem('pharm_qr_num', String(qrNum));
+  localStorage.setItem('pharm_session_ts', String(Date.now()));
+  _startSession();
+
+  if (false) { // (구 Worker 검증 코드 — 비활성화)
     if (sessionStart) {
       _startSession();
     } else {
