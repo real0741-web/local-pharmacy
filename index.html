@@ -1191,7 +1191,7 @@
 if (!AbortSignal.timeout) {
   AbortSignal.timeout = function(ms) {
     const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(new DOMException('TimeoutError','TimeoutError')), ms);
+    setTimeout(() => ctrl.abort(new DOMException("TimeoutError","TimeoutError")), ms);
     return ctrl.signal;
   };
 }
@@ -3045,9 +3045,31 @@ let _qrType = '';  // 'single' | 'rotation'
 
 // QR 탭 열릴 때 호출
 function setQRDefault() {
-  const baseEl = $('#qr-base-url');
+  const baseEl   = $('#qr-base-url');
+  const savedUrl = localStorage.getItem('pharm_qr_base_url');
   if (baseEl && !baseEl.value) {
-    baseEl.value = location.protocol === 'file:' ? '' : (location.origin + location.pathname);
+    baseEl.value = savedUrl || (location.protocol === 'file:' ? '' : (location.origin + location.pathname));
+  }
+  _autoLoadQRConfig();
+}
+
+async function _autoLoadQRConfig() {
+  try {
+    const res = await fetch(`${PROXY}/?action=getQRConfig&shopId=${SHOP_ID}`);
+    if (!res.ok) throw new Error();
+    const cfg = await res.json();
+    if (!cfg || cfg.error) throw new Error();
+    _qrConfig = cfg;
+    const savedUrl = localStorage.getItem('pharm_qr_base_url');
+    const baseEl   = $('#qr-base-url');
+    if (savedUrl && baseEl && !baseEl.value) baseEl.value = savedUrl;
+    if (cfg.mode === 'single' || !cfg.mode) { setQRType('single'); }
+    else { setQRType('rotation'); setQRModeUI(cfg.mode||'auto'); if(cfg.mode==='manual') selectManualQR(cfg.activeQR||1); }
+    if (baseEl?.value) generateAllQRs();
+  } catch(_) {
+    const savedUrl = localStorage.getItem('pharm_qr_base_url');
+    const baseEl   = $('#qr-base-url');
+    if (savedUrl) { if(baseEl) baseEl.value=savedUrl; generateAllQRs(); }
   }
 }
 
@@ -3221,7 +3243,7 @@ async function saveQRConfig() {
 
 // ─ QR URL 조합 헬퍼
 function _buildQRUrl(base, slotNum) {
-  // single 모드도 ?qr=1 고정 — 파라미터 없으면 가격 안 보임
+  // single 모드도 ?qr=1 고정
   const num = (_qrType === 'single') ? 1 : (slotNum || 1);
   try {
     const u = new URL(base);
@@ -3229,6 +3251,15 @@ function _buildQRUrl(base, slotNum) {
     return u.toString();
   } catch(_) {
     return `${base}${base.includes('?') ? '&' : '?'}qr=${num}`;
+  }
+}
+function _buildQRUrl_UNUSED(base, slotNum_UNUSED) {
+  try {
+    const u = new URL(base);
+    u.searchParams.set('qr', String(slotNum));
+    return u.toString();
+  } catch(_) {
+    return `${base}${base.includes('?') ? '&' : '?'}qr=${slotNum}`;
   }
 }
 
@@ -3280,6 +3311,7 @@ function generateAllQRs() {
     return;
   }
 
+  localStorage.setItem('pharm_qr_base_url', base);
   grid.innerHTML = '';
   Object.keys(_qrUrls).forEach(k => delete _qrUrls[k]);
 
@@ -3592,14 +3624,14 @@ function doPrint() {
   setTimeout(() => { document.title = pharmName + ' - 디지털 가이드'; }, 1000);
 }
 
-/* ── 실시간 주문 팝업 (자동 인쇄 없음 — notifier.py가 처리) ── */
+/* ── 실시간 주문 팝업 (자동 인쇄 없음 — notifier.py 처리) ── */
 function showOrderAlert(text) {
   _currentOrderText = text;
   $('#order-alert-body').textContent = text;
   $('#order-alert-time').textContent = new Date().toLocaleTimeString('ko-KR');
   $('#order-alert-overlay').classList.remove('hidden');
   playBeep();
-  autoPrint(text); // 인쇄 내용 준비만
+  autoPrint(text);
 }
 
 function closeOrderAlert() {
@@ -3652,33 +3684,27 @@ function _startSession() {
 
 function checkQRValidity() {
   if (isAdmin) { window._qrPriceVisible = true; return; }
-
   const urlParams = new URLSearchParams(location.search);
   const qrNum     = parseInt(urlParams.get('qr') || '0', 10);
-
-  // QR 파라미터 없으면 → 기존 세션 확인
   if (!qrNum || isNaN(qrNum) || qrNum < 1 || qrNum > 5) {
-    const sessionStart = localStorage.getItem('pharm_session_ts');
-    if (sessionStart && Date.now() - parseInt(sessionStart, 10) < SESSION_MINUTES * 60 * 1000) {
-      _startSession(); return;
-    }
+    const s = localStorage.getItem('pharm_session_ts');
+    if (s && Date.now() - parseInt(s,10) < SESSION_MINUTES*60000) { _startSession(); return; }
     window._qrPriceVisible = false;
     return;
   }
 
-  // QR 파라미터 있으면 → 세션 확인 or 신규 시작
-  const storedQR     = localStorage.getItem('pharm_qr_num');
-  const sessionStart = localStorage.getItem('pharm_session_ts');
-  if (storedQR === String(qrNum) && sessionStart) {
-    const ageMs = Date.now() - parseInt(sessionStart, 10);
+  // 기존 세션 확인
+  const storedQR  = localStorage.getItem('pharm_qr_num');
+  const sessStart = localStorage.getItem('pharm_session_ts');
+  if (storedQR === String(qrNum) && sessStart) {
+    const ageMs = Date.now() - parseInt(sessStart, 10);
     if (ageMs < SESSION_MINUTES * 60 * 1000) { _startSession(); return; }
     localStorage.removeItem('pharm_qr_num');
     localStorage.removeItem('pharm_session_ts');
     _expireSession('expired');
     return;
   }
-
-  // 새 QR 스캔 → 즉시 세션 시작 (Worker 검증 없음)
+  // 새 QR 스캔 → 즉시 세션 시작 (약국 내 물리 QR, Worker 검증 불필요)
   localStorage.setItem('pharm_qr_num', String(qrNum));
   localStorage.setItem('pharm_session_ts', String(Date.now()));
   _startSession();
@@ -4828,44 +4854,42 @@ async function _applyRemoteData(showToastMsg) {
 // ── 앱 초기화: 첫 방문엔 로딩 스크린, 항상 서버 우선 ──
 (async function initApp() {
   const loadingEl = document.getElementById('init-loading-screen');
-  const hasLocal  = !!(data.products?.length && data._savedAt);
 
   function hideLoading() {
     if (loadingEl) loadingEl.style.display = 'none';
   }
 
-  // localStorage 데이터가 있으면 즉시 렌더 (로딩 스크린 숨김)
-  if (hasLocal) {
-    applyHeader(); renderCategories(); renderProducts();
-    renderSidebarBundleBtn(); updateCartUI();
-    hideLoading();
-  }
+  // 즉시 렌더 (localStorage or DEFAULT_DATA) — 아이폰도 바로 콘텐츠 표시
+  applyHeader(); renderCategories(); renderProducts();
+  renderSidebarBundleBtn(); updateCartUI();
+  hideLoading();
 
-  // 서버에서 항상 최신 데이터 가져오기 (1호점 고정)
+  // QR 세션 즉시 검사 (서버 데이터 기다리지 않음)
+  if (!isAdmin) checkQRValidity();
+
+  // 서버에서 최신 데이터 백그라운드 업데이트
   try {
-    const res = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10000),
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 10000);
+    const res  = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
+      cache: 'no-store', signal: ctrl.signal,
     });
+    clearTimeout(tid);
     if (res.ok) {
       const remote = await res.json();
       if (remote && !remote.error && remote.products?.length) {
-        data = migrate(remote);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        currentCat = data.categories[0]?.id || 'hot';
-        applyHeader(); renderCategories(); renderProducts();
-        renderSidebarBundleBtn(); updateCartUI();
+        const localSaved  = data._savedAt || 0;
+        const remoteSaved = remote._savedAt || 0;
+        if (remoteSaved >= localSaved) {
+          data = migrate(remote);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+          currentCat = data.categories[0]?.id || 'hot';
+          applyHeader(); renderCategories(); renderProducts();
+          renderSidebarBundleBtn(); updateCartUI();
+        }
       }
     }
-  } catch(_) {
-    // 네트워크 실패 → localStorage 데이터로 계속
-  }
-
-  // 어떤 경우든 로딩 스크린 제거
-  hideLoading();
-
-  // QR 세션 검사
-  if (!isAdmin) checkQRValidity();
+  } catch(_) { /* 네트워크 실패 무시 — 이미 렌더됨 */ }
 })();
 
 // ── 관리자 세션 복구 & URL 파라미터 처리 ──
