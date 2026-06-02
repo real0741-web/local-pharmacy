@@ -2041,7 +2041,8 @@ async function selectPayment(method) {
   saveMyOrder(order.id);   // 세션별 내 주문 기록
 
   await sendTelegramAlert(order);
-  autoPrintOrder(order); // 주문 즉시 인쇄 (SSE 대기 없이)
+  // 인쇄는 관리자(접수 PC) 화면에서만 — 고객 폰에선 실행 안 함
+  if (isAdmin) autoPrintOrder(order);
 
   // 결제 모달 닫기
   $('#payment-modal-overlay').classList.add('hidden');
