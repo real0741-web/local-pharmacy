@@ -1797,7 +1797,7 @@ async function sendTelegramAlert(order) {
     return line;
   }).join('\n');
 
-  const pharmName = data.settings.pharmacyName || '약국';
+  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
   const text =
     `🔔 새 주문 접수! [${pharmName}]\n\n` +
     `🎫 접수번호: ${order.customerName}\n` +
@@ -4838,13 +4838,23 @@ async function _applyRemoteData(showToastMsg) {
   let _lastVersion = data._savedAt || 0;
   setInterval(async () => {
     try {
+      const ctrl = new AbortController();
+      const tid  = setTimeout(() => ctrl.abort(), 5000);
       const r = await fetch(`${PROXY}/?action=getVersion&shopId=${SHOP_ID}`, {
-        cache: 'no-store', signal: AbortSignal.timeout(5000),
+        mode: 'cors', credentials: 'omit', signal: ctrl.signal,
       });
+      clearTimeout(tid);
       if (!r.ok) return;
       const { _savedAt } = await r.json();
       if (_savedAt && _savedAt > _lastVersion) {
         _lastVersion = _savedAt;
+        if (!isAdmin) {
+          // 새 버전 감지 → 캐시 우회 강제 새로고침 (URL에 버전 파라미터 추가)
+          const u = new URL(location.href);
+          u.searchParams.set('_v', _savedAt);
+          location.replace(u.toString());
+          return;
+        }
         await _applyRemoteData(true);
       }
     } catch(_) {}
@@ -4870,15 +4880,15 @@ async function _applyRemoteData(showToastMsg) {
   // 서버에서 최신 데이터 백그라운드 업데이트
   try {
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 10000);
+    const tid  = setTimeout(() => ctrl.abort(), 12000);
     const res  = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
-      signal: ctrl.signal,
+      mode: 'cors', credentials: 'omit', signal: ctrl.signal,
     });
     clearTimeout(tid);
     if (res.ok) {
       const remote = await res.json();
       if (remote && !remote.error && remote.products?.length) {
-        // 항상 서버 데이터 우선 적용 (타임스탬프 비교 제거 — iOS 첫 방문 대응)
+        // 항상 서버 데이터 적용 (타임스탬프 비교 없음 — iOS 첫 방문 대응)
         data = migrate(remote);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         currentCat = data.categories[0]?.id || 'hot';
