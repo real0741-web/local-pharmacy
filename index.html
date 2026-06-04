@@ -138,7 +138,7 @@
       <div id="logo" class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg cursor-pointer select-none"
            style="background: var(--brand);">℞</div>
       <div>
-        <div id="header-name" class="text-base sm:text-lg font-bold leading-tight">로컬 창고약국</div>
+        <div id="header-name" class="text-base sm:text-lg font-bold leading-tight"></div>
         <div id="header-tagline" class="text-xs text-slate-500 leading-tight">대기 중에 약사님이 큐레이션한 제품을 둘러보세요</div>
       </div>
     </div>
@@ -1202,7 +1202,7 @@ if (!AbortSignal.timeout) {
 const DEFAULT_DATA = {
   bundles: [],
   settings: {
-    pharmacyName: '로컬 창고약국',
+    pharmacyName: '',
     tagline: '대기 중에 약사님이 큐레이션한 제품을 둘러보세요',
     adminPin: '1234',
     allowDelivery: false,
@@ -1353,7 +1353,7 @@ function showToast(msg) {
    사용자 화면 렌더링
    =========================================== */
 function applyHeader() {
-  const name = data.settings.pharmacyName || '로컬 창고약국';
+  const name = data.settings.pharmacyName || '약국';
   $('#header-name').textContent = name;
   $('#header-tagline').textContent = data.settings.tagline || '';
   // 브라우저 탭 제목 + 인쇄 헤더에도 반영
@@ -1797,7 +1797,7 @@ async function sendTelegramAlert(order) {
     return line;
   }).join('\n');
 
-  const pharmName = data.settings.pharmacyName || '로컬 창고약국';
+  const pharmName = data.settings.pharmacyName || '약국';
   const text =
     `🔔 새 주문 접수! [${pharmName}]\n\n` +
     `🎫 접수번호: ${order.customerName}\n` +
