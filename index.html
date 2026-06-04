@@ -4878,15 +4878,12 @@ async function _applyRemoteData(showToastMsg) {
     if (res.ok) {
       const remote = await res.json();
       if (remote && !remote.error && remote.products?.length) {
-        const localSaved  = data._savedAt || 0;
-        const remoteSaved = remote._savedAt || 0;
-        if (remoteSaved >= localSaved) {
-          data = migrate(remote);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-          currentCat = data.categories[0]?.id || 'hot';
-          applyHeader(); renderCategories(); renderProducts();
-          renderSidebarBundleBtn(); updateCartUI();
-        }
+        // 항상 서버 데이터 우선 적용 (타임스탬프 비교 제거 — iOS 첫 방문 대응)
+        data = migrate(remote);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        currentCat = data.categories[0]?.id || 'hot';
+        applyHeader(); renderCategories(); renderProducts();
+        renderSidebarBundleBtn(); updateCartUI();
       }
     }
   } catch(_) { /* 네트워크 실패 무시 — 이미 렌더됨 */ }
