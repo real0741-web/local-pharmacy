@@ -2,6 +2,27 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
+<script>
+// iOS 인앱 브라우저 탈출 — 카카오톡·네이버앱에서 열리면 Safari로 강제 이동
+(function() {
+  var ua = navigator.userAgent || '';
+  var isInApp = /KAKAOTALK|NAVER|Line|Instagram|Facebook/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua);
+  if (isIOS && isInApp) {
+    // iOS 인앱 브라우저에서 Safari로 탈출
+    var url = location.href;
+    // kakaotalk://web/openExternal?url= 방식 (카카오톡)
+    if (/KAKAOTALK/i.test(ua)) {
+      location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url);
+    } else {
+      // 기타 인앱: ftp:// 트릭으로 Safari 강제 오픈
+      location.href = url.replace(/^https?/, 'ftp');
+      setTimeout(function() { location.href = url; }, 100);
+    }
+  }
+})();
+</script>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>로컬 창고약국 - 디지털 가이드</title>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -3673,6 +3694,7 @@ function _expireSession(reason) {
 
 function _startSession() {
   window._qrPriceVisible = true;
+  applyHeader(); // 이름 갱신
   renderProducts();
   clearTimeout(window._sessionExpireTimer);
   const limitMs = SESSION_MINUTES * 60 * 1000;
