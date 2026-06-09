@@ -32,6 +32,8 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <!-- 엑셀 파일 파싱용 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- 토스페이먼츠 SDK -->
+<script src="https://js.tosspayments.com/v1/payment"></script>
 <style>
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo',
@@ -829,6 +831,16 @@
               </div>
               <input type="checkbox" id="pay-toggle-toss" class="w-5 h-5 accent-teal-600 cursor-pointer" onchange="savePayMethods()" />
             </label>
+            <!-- 토스 클라이언트 키 입력 (토스페이 체크 시 표시) -->
+            <div id="toss-key-wrap" class="hidden px-3 pb-2 -mt-1 bg-blue-50 rounded-b-xl border border-t-0 border-blue-200">
+              <label class="text-xs text-slate-600 block mb-1 mt-2">클라이언트 키 <span class="text-slate-400">(토스페이먼츠 대시보드 → API 키)</span></label>
+              <div class="flex gap-2">
+                <input id="setting-toss-client-key" type="password" placeholder="live_ck_..." class="flex-1 text-xs border rounded-lg px-2 py-1.5 font-mono" />
+                <button onclick="saveTossClientKey()" class="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-semibold">저장</button>
+              </div>
+              <div id="toss-key-status" class="text-xs text-slate-400 mt-1"></div>
+              <p class="text-xs text-slate-400 mt-1">🔒 시크릿 키는 Cloudflare Worker 환경변수 <code class="bg-white px-1 rounded">TOSS_SECRET_KEY</code>에 별도 저장하세요</p>
+            </div>
             <label class="flex items-center justify-between p-3 rounded-xl border border-teal-300 bg-teal-50 cursor-pointer">
               <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-lg flex items-center justify-center text-lg" style="background:var(--brand-soft);">🏪</div>
@@ -1228,6 +1240,7 @@ const DEFAULT_DATA = {
     adminPin: '1234',
     allowDelivery: false,
     payMethods: { kakao: false, naver: false, toss: false, counter: true },
+    tossClientKey: '',
     mfdsApiKey: '',
     ntfyTopic: '',   // 비어있으면 첫 실행 시 자동 생성
   },
@@ -1877,6 +1890,11 @@ async function selectPayment(method) {
     updateCartUI();
     toggleCart(false);
     showToast('🔒 세션이 만료됐습니다. QR을 다시 스캔해 주세요.');
+    return;
+  }
+
+  if (method === 'toss') {
+    await initiateTossPayment();
     return;
   }
 
@@ -3574,6 +3592,125 @@ function playBeep() {
   } catch(_) {}
 }
 
+/* ─── 토스페이먼츠 결제 흐름 ─── */
+async function initiateTossPayment() {
+  const clientKey = data.settings.tossClientKey;
+  if (!clientKey) {
+    showToast('⚠️ 관리자 설정 → 결제 수단 → 토스 클라이언트 키를 먼저 등록해주세요');
+    return;
+  }
+  if (!window.TossPayments) {
+    showToast('⚠️ 토스 SDK 로드 중입니다. 잠시 후 다시 눌러주세요.');
+    return;
+  }
+
+  const total = cart.reduce((s, c) => {
+    const p = data.products.find(pp => pp.id === c.id);
+    return s + (p ? p.price * c.qty : 0);
+  }, 0);
+  if (total < 100) { showToast('결제 금액이 너무 작습니다'); return; }
+
+  // 임시 주문 정보 저장 (결제창 이동 후 복원용)
+  const pendingOrder = {
+    items: cart.map(c => {
+      const p = data.products.find(pp => pp.id === c.id);
+      return { id: c.id, name: p?.name || '?', price: p?.price || 0, qty: c.qty, note: p?.pharmacistNote || '' };
+    }),
+    total,
+    deliveryMode: _deliveryMode,
+    delivery: _deliveryMode === 'delivery' ? {
+      name:  ($('#del-name')?.value  || '').trim(),
+      phone: ($('#del-phone')?.value || '').trim(),
+      addr:  ($('#del-addr')?.value  || '').trim(),
+      addr2: ($('#del-addr2')?.value || '').trim(),
+      memo:  ($('#del-memo')?.value  || '').trim(),
+    } : null,
+    ts: Date.now(),
+  };
+  localStorage.setItem('_toss_pending', JSON.stringify(pendingOrder));
+
+  const orderName = cart.length === 1
+    ? (data.products.find(p => p.id === cart[0].id)?.name || '약국 주문')
+    : `${data.products.find(p => p.id === cart[0].id)?.name || '약국 주문'} 외 ${cart.length - 1}건`;
+
+  const orderId = 'ORD-' + Date.now().toString(36).toUpperCase();
+  localStorage.setItem('_toss_order_id', orderId);
+
+  try {
+    const tossPayments = TossPayments(clientKey);
+    // 결제창 열기 (현재 페이지에서 리다이렉트)
+    tossPayments.requestPayment('토스페이', {
+      amount: total,
+      orderId,
+      orderName,
+      customerName: '고객',
+      successUrl: location.origin + location.pathname + '?toss_ok=1',
+      failUrl:    location.origin + location.pathname + '?toss_fail=1',
+    });
+    // requestPayment는 페이지를 이동하므로 이후 코드 실행 안 됨
+  } catch(e) {
+    localStorage.removeItem('_toss_pending');
+    localStorage.removeItem('_toss_order_id');
+    showToast('토스 결제창 오류: ' + (e.message || '알 수 없는 오류'));
+  }
+}
+
+async function completeTossPayment(paymentKey, orderId, amount) {
+  showLoading('💳 토스 결제 승인 중...');
+  try {
+    const pendingRaw = localStorage.getItem('_toss_pending');
+    const pending    = pendingRaw ? JSON.parse(pendingRaw) : null;
+
+    const res = await fetch(`${PROXY}/?action=confirmTossPayment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentKey, orderId, amount, order: pending || {} }),
+    });
+    const json = await res.json();
+    hideLoading();
+
+    if (!json.ok) {
+      showToast('❌ 결제 승인 실패: ' + (json.error || '오류가 발생했습니다'));
+      // URL 파라미터 제거
+      history.replaceState({}, '', location.pathname);
+      return;
+    }
+
+    // 결제 성공 — 주문 완료 처리
+    localStorage.removeItem('_toss_pending');
+    localStorage.removeItem('_toss_order_id');
+
+    const order = json.order;
+    // 접수번호 화면 표시
+    const qNum     = getTodayQueueNumber();
+    const queueStr = formatQueueNum(qNum);
+    const itemLines = (order.items || []).map(i =>
+      `· ${i.name} × ${i.qty}  <b>${fmt(i.price * i.qty)}</b>`
+    ).join('<br/>');
+    const total2 = order.total || amount;
+
+    $('#complete-queue-num').textContent = queueStr;
+    $('#complete-order-summary').innerHTML =
+      `${itemLines}<br/><hr style="margin:8px 0"/><b>합계 ${fmt(total2)}</b> · 토스페이 완료 💳`;
+    $('#order-complete-overlay').classList.remove('hidden');
+
+    // 관리자 인쇄
+    if (isAdmin) { autoPrintOrder(order); }
+
+    cart = [];
+    updateCartUI();
+    $('#payment-modal-overlay').classList.add('hidden');
+    // URL 파라미터 제거
+    history.replaceState({}, '', location.pathname);
+    showToast('✅ 토스 결제 완료!');
+
+  } catch(e) {
+    hideLoading();
+    showToast('결제 처리 오류: ' + (e.message || ''));
+    history.replaceState({}, '', location.pathname);
+  }
+}
+
 /* ── 주문서 HTML 생성 (buildReceiptHTML) ── */
 function buildReceiptHTML(order) {
   const pharmName  = data.settings.pharmacyName  || '로컬 창고약국';
@@ -4657,6 +4794,17 @@ function fillSettings() {
   if ($('#pay-toggle-kakao')) $('#pay-toggle-kakao').checked = !!pm.kakao;
   if ($('#pay-toggle-naver')) $('#pay-toggle-naver').checked = !!pm.naver;
   if ($('#pay-toggle-toss'))  $('#pay-toggle-toss').checked  = !!pm.toss;
+  // 토스 클라이언트 키
+  const tossKey = data.settings.tossClientKey || '';
+  if ($('#setting-toss-client-key')) $('#setting-toss-client-key').value = tossKey ? '●'.repeat(12) : '';
+  const tossKeyStatus = $('#toss-key-status');
+  if (tossKeyStatus) {
+    tossKeyStatus.textContent = tossKey ? '✅ 등록됨 · ' + (tossKey.startsWith('live_') ? '실제 결제 모드' : '테스트 모드') : '미등록 — 저장 시 실제 결제 가능';
+    tossKeyStatus.style.color = tossKey ? '#0f766e' : '#94a3b8';
+  }
+  // 토스 키 입력란 표시
+  const tossWrap = $('#toss-key-wrap');
+  if (tossWrap) tossWrap.classList.toggle('hidden', !pm.toss);
   const key = data.settings.mfdsApiKey || '';
   if ($('#setting-mfds-key')) $('#setting-mfds-key').value = key;
   const statusEl = $('#mfds-key-status');
@@ -4704,14 +4852,30 @@ function saveDeliveryToggle() {
 }
 
 function savePayMethods() {
+  const tossOn = !!$('#pay-toggle-toss')?.checked;
   data.settings.payMethods = {
     kakao:   !!$('#pay-toggle-kakao')?.checked,
     naver:   !!$('#pay-toggle-naver')?.checked,
-    toss:    !!$('#pay-toggle-toss')?.checked,
+    toss:    tossOn,
     counter: true,
   };
+  // 토스 클라이언트 키 입력란 표시 토글
+  const tossWrap = $('#toss-key-wrap');
+  if (tossWrap) tossWrap.classList.toggle('hidden', !tossOn);
   saveData();
   showToast('✅ 결제 수단 저장됨');
+}
+
+function saveTossClientKey() {
+  const raw = ($('#setting-toss-client-key')?.value || '').trim();
+  if (!raw || raw.startsWith('●')) { showToast('클라이언트 키를 입력해주세요'); return; }
+  if (!raw.startsWith('live_ck_') && !raw.startsWith('test_ck_')) {
+    showToast('⚠️ 키 형식이 올바르지 않습니다 (live_ck_ 또는 test_ck_ 로 시작)'); return;
+  }
+  data.settings.tossClientKey = raw;
+  saveData();
+  fillSettings();
+  showToast(raw.startsWith('live_') ? '✅ 실제 결제 키 저장됨' : '✅ 테스트 키 저장됨 (실제 결제 아님)');
 }
 
 function saveMfdsKey() {
@@ -4873,23 +5037,13 @@ async function _applyRemoteData(showToastMsg) {
   let _lastVersion = data._savedAt || 0;
   setInterval(async () => {
     try {
-      const ctrl = new AbortController();
-      const tid  = setTimeout(() => ctrl.abort(), 5000);
       const r = await fetch(`${PROXY}/?action=getVersion&shopId=${SHOP_ID}`, {
-        mode: 'cors', credentials: 'omit', signal: ctrl.signal,
+        cache: 'no-store', signal: AbortSignal.timeout(5000),
       });
-      clearTimeout(tid);
       if (!r.ok) return;
       const { _savedAt } = await r.json();
       if (_savedAt && _savedAt > _lastVersion) {
         _lastVersion = _savedAt;
-        if (!isAdmin) {
-          // 새 버전 감지 → 캐시 우회 강제 새로고침 (URL에 버전 파라미터 추가)
-          const u = new URL(location.href);
-          u.searchParams.set('_v', _savedAt);
-          location.replace(u.toString());
-          return;
-        }
         await _applyRemoteData(true);
       }
     } catch(_) {}
@@ -4909,26 +5063,50 @@ async function _applyRemoteData(showToastMsg) {
   renderSidebarBundleBtn(); updateCartUI();
   hideLoading();
 
+  // ── 토스페이 결제 결과 처리 (리다이렉트 후 복귀) ──────
+  const _tossParams = new URLSearchParams(location.search);
+  if (_tossParams.get('toss_ok') === '1') {
+    const paymentKey = _tossParams.get('paymentKey');
+    const orderId    = _tossParams.get('orderId');
+    const amount     = Number(_tossParams.get('amount'));
+    if (paymentKey && orderId && amount) {
+      // QR 세션 복원 (결제창 이동 전 세션이 localStorage에 유지됨)
+      window._qrPriceVisible = true;
+      completeTossPayment(paymentKey, orderId, amount);
+    } else {
+      history.replaceState({}, '', location.pathname);
+    }
+  } else if (_tossParams.get('toss_fail') === '1') {
+    const msg = _tossParams.get('message') || '결제가 취소됐습니다';
+    history.replaceState({}, '', location.pathname);
+    showToast('❌ ' + decodeURIComponent(msg));
+    localStorage.removeItem('_toss_pending');
+    localStorage.removeItem('_toss_order_id');
+  }
+
   // QR 세션 즉시 검사 (서버 데이터 기다리지 않음)
   if (!isAdmin) checkQRValidity();
 
   // 서버에서 최신 데이터 백그라운드 업데이트
   try {
     const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 12000);
+    const tid  = setTimeout(() => ctrl.abort(), 10000);
     const res  = await fetch(`${PROXY}/?action=getData&shopId=${SHOP_ID}`, {
-      mode: 'cors', credentials: 'omit', signal: ctrl.signal,
+      cache: 'no-store', signal: ctrl.signal,
     });
     clearTimeout(tid);
     if (res.ok) {
       const remote = await res.json();
       if (remote && !remote.error && remote.products?.length) {
-        // 항상 서버 데이터 적용 (타임스탬프 비교 없음 — iOS 첫 방문 대응)
-        data = migrate(remote);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        currentCat = data.categories[0]?.id || 'hot';
-        applyHeader(); renderCategories(); renderProducts();
-        renderSidebarBundleBtn(); updateCartUI();
+        const localSaved  = data._savedAt || 0;
+        const remoteSaved = remote._savedAt || 0;
+        if (remoteSaved >= localSaved) {
+          data = migrate(remote);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+          currentCat = data.categories[0]?.id || 'hot';
+          applyHeader(); renderCategories(); renderProducts();
+          renderSidebarBundleBtn(); updateCartUI();
+        }
       }
     }
   } catch(_) { /* 네트워크 실패 무시 — 이미 렌더됨 */ }
