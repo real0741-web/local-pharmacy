@@ -4090,8 +4090,10 @@ async function searchDrugByName() {
       mfdsApi('drugPermit', { ITEM_NAME: keyword, numOfRows: '20' }, AbortSignal.timeout(9000)),
     ]);
 
-    const easyItems = easyRes.status === 'fulfilled' ? (easyRes.value?.body?.items || []) : [];
-    const fullItems = fullRes.status === 'fulfilled' ? (fullRes.value?.body?.items || []) : [];
+    // Worker 에러 메시지 우선 확인 (MFDS_API_KEY 미설정 등)
+    const workerErr = easyRes.value?.error || fullRes.value?.error;
+    const easyItems = easyRes.status === 'fulfilled' && !easyRes.value?.error ? (easyRes.value?.body?.items || []) : [];
+    const fullItems = fullRes.status === 'fulfilled' && !fullRes.value?.error ? (fullRes.value?.body?.items || []) : [];
 
     // e약은요 우선, 전체 허가DB는 중복 제거 후 추가
     const easyNames = new Set(easyItems.map(i => (i.itemName||'').trim()));
@@ -4099,8 +4101,14 @@ async function searchDrugByName() {
     const totalCount = easyItems.length + uniqueFull.length;
 
     if (totalCount === 0) {
-      status.textContent = `⚠️ "${keyword}" 검색 결과 없음 — 다른 키워드로 시도해보세요`;
-      status.style.color = '#b45309';
+      if (workerErr) {
+        // Worker가 에러 반환한 경우 (API 키 없음 등) — 실제 원인 표시
+        status.textContent = `❌ ${workerErr}`;
+        status.style.color = '#dc2626';
+      } else {
+        status.textContent = `⚠️ "${keyword}" 검색 결과 없음 — 다른 키워드로 시도해보세요`;
+        status.style.color = '#b45309';
+      }
       return;
     }
     status.textContent = `"${keyword}" 검색결과 ${totalCount}건 — 선택하면 자동 입력됩니다`;
