@@ -857,23 +857,6 @@
         <hr class="border-slate-100" />
 
         <div>
-          <div class="font-bold mb-2">식약처 바코드 조회 API</div>
-          <p class="text-sm text-slate-500 mb-2">
-            국내 의약품·건기식 바코드 자동 조회에 필요합니다.<br/>
-            <a href="https://www.data.go.kr/data/15057582/openapi.do" target="_blank" class="text-teal-600 underline">data.go.kr → 건강기능식품 정보</a> 또는
-            <a href="https://www.data.go.kr/data/15075057/openapi.do" target="_blank" class="text-teal-600 underline">의약품개요정보</a>에서 무료 신청 후 인증키를 붙여넣으세요.
-          </p>
-          <div class="field">
-            <label>공공데이터 인증키 (Encoding 키)</label>
-            <input id="setting-mfds-key" type="text" placeholder="발급받은 인증키 붙여넣기" autocomplete="off" />
-          </div>
-          <button onclick="saveMfdsKey()" class="btn-primary">저장</button>
-          <span id="mfds-key-status" class="ml-3 text-xs text-slate-400"></span>
-        </div>
-
-        <hr class="border-slate-100" />
-
-        <div>
           <div class="font-bold mb-2">관리자 PIN 변경</div>
           <div class="field">
             <label>새 PIN (숫자 4~8자리)</label>
@@ -3895,7 +3878,14 @@ const PROXY = 'https://pharmacy-proxy.speed0324.workers.dev';
 const proxyFetch = (apiUrl, opts={}) =>
   fetch(`${PROXY}/?url=${encodeURIComponent(apiUrl)}`, opts);
 
-const getMfdsKey = () => (data.settings.mfdsApiKey || '').trim();
+// 식약처 API 헬퍼 — Worker가 서버 사이드 MFDS_API_KEY로 호출 (클라이언트 키 노출 없음)
+const mfdsApi = (service, params = {}, signal) =>
+  fetch(`${PROXY}/?action=mfdsApi`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service, params }),
+    signal,
+  }).then(r => r.json());
 
 function _fillProduct({ name='', brand='', qty='', info='', imageUrl='', note='', source='' }) {
   if (name)     $('#prod-edit-name').value    = name;
@@ -3939,83 +3929,65 @@ async function lookupBarcode() {
   const status = $('#barcode-status');
   status.style.color = '#64748b';
   $('#drug-search-results').classList.add('hidden');
-  const KEY = getMfdsKey();
 
   /* 0단계: 식약처 허가정보 BAR_CODE 조회 → ITEM_SEQ → e약은요 */
-  if (KEY) {
-    status.textContent = '💊 식약처 의약품 DB 조회 중... (1/4)';
-    try {
-      const url = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
-                  `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=3&BAR_CODE=${code}`;
-      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(8000) });
-      const json = await res.json();
-      const items = json?.body?.items;
-      if (items && items.length > 0) {
-        const itemSeq = items[0].ITEM_SEQ;
-        if (itemSeq) {
-          try {
-            const url2 = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
-                         `?serviceKey=${encodeURIComponent(KEY)}&itemSeq=${itemSeq}&type=json&numOfRows=3`;
-            const res2  = await proxyFetch(url2, { signal: AbortSignal.timeout(7000) });
-            const json2 = await res2.json();
-            const items2 = json2?.body?.items;
-            if (items2 && items2.length > 0) { _fillProduct(_parseEDrug(items2[0])); return; }
-          } catch(e2) { console.warn('e약은요(itemSeq):', e2.message); }
-        }
-        const r = items[0];
-        _fillProduct({
-          name:  r.ITEM_NAME || r.ITEM_ENG_NAME || '',
-          brand: r.ENTP_NAME || '',
-          qty:   r.PACK_UNIT || '',
-          info:  [
-            r.ENTP_NAME    && `제조사: ${r.ENTP_NAME}`,
-            r.MAIN_INGR    && `주성분: ${String(r.MAIN_INGR).slice(0,120)}`,
-            r.ETC_OTC_CODE && `구분: ${r.ETC_OTC_CODE}`,
-            r.CHART        && `성상: ${String(r.CHART).slice(0,80)}`,
-          ].filter(Boolean).join('\n'),
-          imageUrl: r.BIG_PRDT_IMG_URL || '',
-          source: '식약처 허가정보'
-        });
-        return;
+  status.textContent = '💊 식약처 의약품 DB 조회 중... (1/5)';
+  try {
+    const json = await mfdsApi('drugPermit', { numOfRows: '3', BAR_CODE: code }, AbortSignal.timeout(8000));
+    const items = json?.body?.items;
+    if (items && items.length > 0) {
+      const itemSeq = items[0].ITEM_SEQ;
+      if (itemSeq) {
+        try {
+          const json2 = await mfdsApi('easyDrug', { itemSeq, numOfRows: '3' }, AbortSignal.timeout(7000));
+          const items2 = json2?.body?.items;
+          if (items2 && items2.length > 0) { _fillProduct(_parseEDrug(items2[0])); return; }
+        } catch(e2) { console.warn('e약은요(itemSeq):', e2.message); }
       }
-    } catch(e) { console.warn('DrugPrdtPrmsnInfo:', e.message); }
-  }
+      const r = items[0];
+      _fillProduct({
+        name:  r.ITEM_NAME || r.ITEM_ENG_NAME || '',
+        brand: r.ENTP_NAME || '',
+        qty:   r.PACK_UNIT || '',
+        info:  [
+          r.ENTP_NAME    && `제조사: ${r.ENTP_NAME}`,
+          r.MAIN_INGR    && `주성분: ${String(r.MAIN_INGR).slice(0,120)}`,
+          r.ETC_OTC_CODE && `구분: ${r.ETC_OTC_CODE}`,
+          r.CHART        && `성상: ${String(r.CHART).slice(0,80)}`,
+        ].filter(Boolean).join('\n'),
+        imageUrl: r.BIG_PRDT_IMG_URL || '',
+        source: '식약처 허가정보'
+      });
+      return;
+    }
+  } catch(e) { console.warn('DrugPrdtPrmsnInfo:', e.message); }
 
   /* 1단계: e약은요 itemSeq 직접 시도 */
-  if (KEY) {
-    try {
-      const url = `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
-                  `?serviceKey=${encodeURIComponent(KEY)}&itemSeq=${code}&type=json&numOfRows=3`;
-      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(7000) });
-      const json = await res.json();
-      const items = json?.body?.items;
-      if (items && items.length > 0) { _fillProduct(_parseEDrug(items[0])); return; }
-    } catch(e) { console.warn('e약은요(direct):', e.message); }
-  }
+  try {
+    const json = await mfdsApi('easyDrug', { itemSeq: code, numOfRows: '3' }, AbortSignal.timeout(7000));
+    const items = json?.body?.items;
+    if (items && items.length > 0) { _fillProduct(_parseEDrug(items[0])); return; }
+  } catch(e) { console.warn('e약은요(direct):', e.message); }
 
   /* 2단계: 식품안전나라 C005 */
-  if (KEY) {
-    status.textContent = '🥗 식품안전나라 DB 조회 중... (2/4)';
-    try {
-      const url  = `https://openapi.foodsafetykorea.go.kr/api/${KEY}/C005/json/1/5/BAR_CD=${code}`;
-      const res  = await proxyFetch(url, { signal: AbortSignal.timeout(7000) });
-      const json = await res.json();
-      const rows = json?.C005?.row;
-      if (rows && rows.length > 0) {
-        const r = rows[0];
-        _fillProduct({
-          name: r.PRDLST_NM || '', brand: r.BSSH_NM || '', qty: r.NET_WT || '',
-          info: [
-            r.BSSH_NM    && `제조사: ${r.BSSH_NM}`,
-            r.RAWMTRL_NM && `주원료: ${r.RAWMTRL_NM}`,
-            r.NET_WT     && `용량: ${r.NET_WT}`,
-          ].filter(Boolean).join('\n'),
-          imageUrl: '', source: '식품안전나라'
-        });
-        return;
-      }
-    } catch(e) { console.warn('식품안전나라:', e.message); }
-  }
+  status.textContent = '🥗 식품안전나라 DB 조회 중... (2/5)';
+  try {
+    const json = await mfdsApi('foodSafety', { barcode: code }, AbortSignal.timeout(7000));
+    const rows = json?.C005?.row;
+    if (rows && rows.length > 0) {
+      const r = rows[0];
+      _fillProduct({
+        name: r.PRDLST_NM || '', brand: r.BSSH_NM || '', qty: r.NET_WT || '',
+        info: [
+          r.BSSH_NM    && `제조사: ${r.BSSH_NM}`,
+          r.RAWMTRL_NM && `주원료: ${r.RAWMTRL_NM}`,
+          r.NET_WT     && `용량: ${r.NET_WT}`,
+        ].filter(Boolean).join('\n'),
+        imageUrl: '', source: '식품안전나라'
+      });
+      return;
+    }
+  } catch(e) { console.warn('식품안전나라:', e.message); }
 
   /* 3단계: 네이버 쇼핑 (생활용품·화장품·식품 등 범용) */
   status.textContent = '🛍️ 네이버 쇼핑 DB 조회 중... (3/5)';
@@ -4094,9 +4066,7 @@ async function lookupBarcode() {
   } catch(e) { console.warn('UPCItemDB:', e.message); }
 
   /* 전체 실패 */
-  status.textContent = KEY
-    ? `⚠️ 바코드 [${code}] 를 DB에서 찾지 못했습니다. 아래 제품명 검색을 이용하세요.`
-    : `⚠️ 설정 탭에서 공공데이터 API 키를 등록하면 국내 의약품도 조회됩니다.`;
+  status.textContent = `⚠️ 바코드 [${code}] 를 DB에서 찾지 못했습니다. 아래 제품명 검색을 이용하세요.`;
   status.style.color = '#b45309';
 }
 
@@ -4104,8 +4074,6 @@ async function lookupBarcode() {
 async function searchDrugByName() {
   const keyword = ($('#drug-name-input').value || '').trim();
   if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
-  const KEY = getMfdsKey();
-  if (!KEY) { showToast('설정 탭에서 공공데이터 API 키를 먼저 등록해주세요'); return; }
   const status = $('#barcode-status');
   const listEl = $('#drug-search-results');
   status.textContent = `🔍 "${keyword}" 검색 중...`;
@@ -4116,18 +4084,10 @@ async function searchDrugByName() {
   const strip = s => (s||'').replace(/<[^>]+>/g,'').trim();
 
   try {
-    // 두 DB 동시 조회
+    // 두 DB 동시 조회 (Worker가 MFDS_API_KEY로 호출)
     const [easyRes, fullRes] = await Promise.allSettled([
-      proxyFetch(
-        `https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList` +
-        `?serviceKey=${encodeURIComponent(KEY)}&itemName=${encodeURIComponent(keyword)}&type=json&numOfRows=10`,
-        { signal: AbortSignal.timeout(9000) }
-      ).then(r => r.json()),
-      proxyFetch(
-        `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
-        `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=20&ITEM_NAME=${encodeURIComponent(keyword)}`,
-        { signal: AbortSignal.timeout(9000) }
-      ).then(r => r.json()),
+      mfdsApi('easyDrug',   { itemName: keyword, numOfRows: '10' }, AbortSignal.timeout(9000)),
+      mfdsApi('drugPermit', { ITEM_NAME: keyword, numOfRows: '20' }, AbortSignal.timeout(9000)),
     ]);
 
     const easyItems = easyRes.status === 'fulfilled' ? (easyRes.value?.body?.items || []) : [];
@@ -4358,8 +4318,6 @@ function searchProductByName() {
 async function searchHealthFood() {
   const keyword = ($('#drug-name-input').value || '').trim();
   if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
-  const KEY = getMfdsKey();
-  if (!KEY) { showToast('설정 탭에서 공공데이터 API 키를 먼저 등록해주세요'); return; }
   const status = $('#barcode-status');
   const listEl = $('#drug-search-results');
   status.textContent = `🌿 건강기능식품 "${keyword}" 검색 중...`;
@@ -4367,11 +4325,7 @@ async function searchHealthFood() {
   listEl.classList.add('hidden');
   listEl.innerHTML = '';
   try {
-    const url = `https://apis.data.go.kr/1471000/HtfsInfoService01/getHtfsItem01` +
-                `?serviceKey=${encodeURIComponent(KEY)}&pageNo=1&numOfRows=10&type=json` +
-                `&PRDLST_NM=${encodeURIComponent(keyword)}`;
-    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
-    const json = await res.json();
+    const json  = await mfdsApi('healthFood', { PRDLST_NM: keyword, numOfRows: '10' }, AbortSignal.timeout(9000));
     const items = json?.body?.items;
     if (!items || items.length === 0) {
       status.textContent = `⚠️ "${keyword}" 건강기능식품 검색 결과 없음`;
@@ -4418,8 +4372,6 @@ async function searchHealthFood() {
 async function searchQuasiDrug() {
   const keyword = ($('#drug-name-input').value || '').trim();
   if (!keyword) { showToast('검색할 제품명을 입력해주세요'); return; }
-  const KEY = getMfdsKey();
-  if (!KEY) { showToast('설정 탭에서 공공데이터 API 키를 먼저 등록해주세요'); return; }
   const status = $('#barcode-status');
   const listEl = $('#drug-search-results');
   status.textContent = `🧴 의약외품 "${keyword}" 검색 중...`;
@@ -4427,19 +4379,16 @@ async function searchQuasiDrug() {
   listEl.classList.add('hidden');
   listEl.innerHTML = '';
   try {
-    const url = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
-                `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=10` +
-                `&ITEM_NAME=${encodeURIComponent(keyword)}&PRDUCT_TYPE=%EC%9D%98%EC%95%BD%EC%99%B8%ED%92%88`; // 의약외품 필터
-    const res  = await proxyFetch(url, { signal: AbortSignal.timeout(9000) });
-    const json = await res.json();
+    // 의약외품 필터로 먼저 조회
+    const json = await mfdsApi('drugPermit', {
+      ITEM_NAME: keyword, numOfRows: '10', PRDUCT_TYPE: '의약외품',
+    }, AbortSignal.timeout(9000));
     const items = json?.body?.items;
     if (!items || items.length === 0) {
       // 필터 없이 재시도
-      const url2 = `https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService05/getDrugPrdtPrmsnDtlInq05` +
-                   `?serviceKey=${encodeURIComponent(KEY)}&type=json&numOfRows=15` +
-                   `&ITEM_NAME=${encodeURIComponent(keyword)}`;
-      const res2  = await proxyFetch(url2, { signal: AbortSignal.timeout(9000) });
-      const json2 = await res2.json();
+      const json2 = await mfdsApi('drugPermit', {
+        ITEM_NAME: keyword, numOfRows: '15',
+      }, AbortSignal.timeout(9000));
       const items2 = json2?.body?.items;
       if (!items2 || items2.length === 0) {
         status.textContent = `⚠️ "${keyword}" 의약외품 검색 결과 없음`;
@@ -4805,13 +4754,6 @@ function fillSettings() {
   // 토스 키 입력란 표시
   const tossWrap = $('#toss-key-wrap');
   if (tossWrap) tossWrap.classList.toggle('hidden', !pm.toss);
-  const key = data.settings.mfdsApiKey || '';
-  if ($('#setting-mfds-key')) $('#setting-mfds-key').value = key;
-  const statusEl = $('#mfds-key-status');
-  if (statusEl) {
-    statusEl.textContent = key ? '✅ 등록됨 · 앞 8자: ' + key.slice(0, 8) + '***' : '미등록';
-    statusEl.style.color = key ? '#0f766e' : '#94a3b8';
-  }
 }
 
 function saveSettings() {
@@ -4876,14 +4818,6 @@ function saveTossClientKey() {
   saveData();
   fillSettings();
   showToast(raw.startsWith('live_') ? '✅ 실제 결제 키 저장됨' : '✅ 테스트 키 저장됨 (실제 결제 아님)');
-}
-
-function saveMfdsKey() {
-  const key = ($('#setting-mfds-key')?.value || '').trim();
-  data.settings.mfdsApiKey = key;
-  saveData();
-  fillSettings();
-  showToast(key ? '✅ API 키 저장됨' : '⚠️ API 키가 삭제됐습니다');
 }
 
 function changePin() {
