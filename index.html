@@ -1126,8 +1126,16 @@
       <div id="ai-analyze-status" class="text-xs text-center mt-1 hidden"></div>
     </div>
     <div class="field">
-      <label>분류</label>
-      <select id="prod-edit-cat" onchange="updateGroupOptions(this.value,'')"></select>
+      <label>분류 (주 카테고리)</label>
+      <select id="prod-edit-cat" onchange="updateGroupOptions(this.value,''); renderExtraCatsUI(this.value, getExtraCatsFromUI())"></select>
+    </div>
+    <!-- ── 추가 카테고리 (멀티 카테고리) ── -->
+    <div class="field">
+      <label class="flex items-center gap-1.5">
+        📂 추가 카테고리
+        <span class="text-xs font-normal text-slate-400">(이 제품을 여러 분류에 동시 노출)</span>
+      </label>
+      <div id="extra-cats-container" class="space-y-1.5 mt-1"></div>
     </div>
     <div class="field">
       <label>제품명</label>
@@ -1497,7 +1505,22 @@ function renderProducts() {
   $('#cat-title').textContent = `${cat.emoji} ${cat.name}`;
   $('#cat-desc').textContent = cat.desc || '';
 
-  const list = data.products.filter(p => p.cat === currentCat && !p.hidden);
+  const rawList = data.products.filter(p =>
+    !p.hidden && (
+      p.cat === currentCat ||
+      (p.extraCats || []).some(e => e.cat === currentCat)
+    )
+  );
+  // 카테고리별 설명 오버라이드 적용
+  const list = rawList.map(p => {
+    if (p.cat === currentCat) return p;
+    const ex = (p.extraCats || []).find(e => e.cat === currentCat);
+    if (!ex) return p;
+    return Object.assign({}, p, {
+      tagline:        ex.tagline        || p.tagline,
+      pharmacistNote: ex.pharmacistNote || p.pharmacistNote,
+    });
+  });
   $('#cat-count').textContent = `총 ${list.length}개`;
 
   const grid = $('#product-grid');
@@ -2445,7 +2468,9 @@ function renderAdminCats() {
     clearCatSelection(); return;
   }
   data.categories.forEach((c, i) => {
-    const count = data.products.filter(p => p.cat === c.id).length;
+    const count = data.products.filter(p =>
+      p.cat === c.id || (p.extraCats||[]).some(e => e.cat === c.id)
+    ).length;
     const selected = _selectedCatId === c.id;
     const row = document.createElement('div');
     row.className = 'card p-3 flex items-center gap-3 cursor-pointer transition-all select-none';
@@ -3009,6 +3034,70 @@ function deleteProduct(id) {
   data.products = data.products.filter(p => p.id !== id);
   saveData(); renderAdminProducts();
 }
+/* ─── 멀티 카테고리 UI 헬퍼 ─── */
+function renderExtraCatsUI(primaryCat, existingExtras) {
+  const container = $('#extra-cats-container');
+  if (!container) return;
+  const others = data.categories.filter(c => c.id !== primaryCat);
+  if (others.length === 0) {
+    container.innerHTML = '<div class="text-xs text-slate-400 py-1">다른 분류가 없습니다</div>';
+    return;
+  }
+  container.innerHTML = others.map(c => {
+    const ex      = (existingExtras || []).find(e => e.cat === c.id);
+    const checked = ex ? 'checked' : '';
+    const hidden  = ex ? '' : 'hidden';
+    return `
+      <div class="extra-cat-row rounded-xl border border-slate-200 overflow-hidden" data-cat="${c.id}">
+        <label class="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-slate-50 select-none">
+          <input type="checkbox" class="extra-cat-check w-4 h-4 accent-teal-600" ${checked}
+                 onchange="toggleExtraCat('${c.id}')" />
+          <span class="text-base">${c.emoji || '📂'}</span>
+          <span class="text-sm font-medium text-slate-700">${c.name}</span>
+          <span class="ml-auto text-xs text-slate-400">${ex ? '설명 따로 입력됨' : '체크하면 이 분류에도 표시'}</span>
+        </label>
+        <div class="extra-cat-detail px-3 pb-3 pt-1 space-y-2 bg-teal-50/60 border-t border-teal-100 ${hidden}">
+          <div class="text-xs text-teal-700 font-semibold">💬 이 카테고리에서만 보이는 설명 (선택 — 비워두면 기본값 사용)</div>
+          <input type="text" class="extra-cat-tagline w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-teal-500"
+                 placeholder="한 줄 설명 (예: 가려움증·두드러기에)"
+                 value="${(ex?.tagline || '').replace(/"/g, '&quot;')}" />
+          <textarea class="extra-cat-note w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-teal-500 resize-none"
+                    rows="2"
+                    placeholder="약사 한마디 (예: 피부 가려움엔 하루 1정으로 충분해요)">${ex?.pharmacistNote || ''}</textarea>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleExtraCat(catId) {
+  const row    = document.querySelector(`.extra-cat-row[data-cat="${catId}"]`);
+  if (!row) return;
+  const detail = row.querySelector('.extra-cat-detail');
+  const label  = row.querySelector('label span.ml-auto');
+  if (row.querySelector('.extra-cat-check').checked) {
+    detail.classList.remove('hidden');
+    if (label) label.textContent = '설명 따로 입력 가능';
+  } else {
+    detail.classList.add('hidden');
+    if (label) label.textContent = '체크하면 이 분류에도 표시';
+  }
+}
+
+function getExtraCatsFromUI() {
+  const result = [];
+  document.querySelectorAll('.extra-cat-row').forEach(row => {
+    if (row.querySelector('.extra-cat-check')?.checked) {
+      result.push({
+        cat:            row.dataset.cat,
+        tagline:        row.querySelector('.extra-cat-tagline')?.value?.trim() || '',
+        pharmacistNote: row.querySelector('.extra-cat-note')?.value?.trim()    || '',
+      });
+    }
+  });
+  return result;
+}
+
 function openProductEditor(id) {
   if (data.categories.length === 0) { alert('먼저 분류를 1개 이상 만들어주세요'); return; }
   const editing = id ? data.products.find(p => p.id === id) : null;
@@ -3029,6 +3118,7 @@ function openProductEditor(id) {
   $('#prod-edit-price-hidden').checked = editing?.priceHidden || false;
   $('#prod-edit-hidden').checked       = editing?.hidden      || false;
   updateGroupOptions(editing?.cat || data.categories[0]?.id, editing?.group || '');
+  renderExtraCatsUI(editing?.cat || data.categories[0]?.id, editing?.extraCats || []);
   $('#prod-edit-image').value    = editing?.image    || '';
   $('#barcode-input').value      = '';
   $('#drug-name-input').value    = '';
@@ -3112,6 +3202,7 @@ function saveProduct() {
 
   const obj = {
     cat,
+    extraCats:     getExtraCatsFromUI(),
     emoji:         $('#prod-edit-emoji').value.trim() || '📦',
     name,
     tagline:       $('#prod-edit-tagline').value.trim(),
